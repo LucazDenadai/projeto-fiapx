@@ -11,8 +11,8 @@ Cada requisito do [enunciado](enunciado.md) cruzado com o estado do projeto base
 
 | ID | Requisito (enunciado) | Nível | Problema no projeto base | Como atender (direção, não decisão) | Decisão pendente |
 |---|---|---|---|---|---|
-| RF01 | Processar mais de um vídeo ao mesmo tempo | Obrigatório | Processamento síncrono dentro do request: `handleVideoUpload` chama `processVideo` direto (`main.go:117`). Um vídeo longo segura a conexão HTTP; concorrência só existe por acaso (goroutines do Gin), sem limite nem controle. | Upload só registra o Vídeo e enfileira um Job; workers consomem a fila em paralelo, com concorrência configurável por worker. | ~~A1~~ [ADR-0001](adr/0001-api-worker-notifier.md), A2 |
-| RF02 | Em picos, não perder requisição | Obrigatório | Sem fila nem estado persistido: se o processo cai durante o ffmpeg, o vídeo e o pedido se perdem (`uploads/` local, sem registro). | Fila durável com ack manual após conclusão; mensagem persistente; retry com DLQ; garantia de consistência entre "gravar Vídeo" e "publicar Job". | A2, A3 |
+| RF01 | Processar mais de um vídeo ao mesmo tempo | Obrigatório | Processamento síncrono dentro do request: `handleVideoUpload` chama `processVideo` direto (`main.go:117`). Um vídeo longo segura a conexão HTTP; concorrência só existe por acaso (goroutines do Gin), sem limite nem controle. | Upload só registra o Vídeo e enfileira um Job; workers consomem a fila em paralelo, com concorrência configurável por worker. | ~~A1~~ [ADR-0001](adr/0001-api-worker-notifier.md), ~~A2~~ [ADR-0002](adr/0002-rabbitmq-mensageria.md) |
+| RF02 | Em picos, não perder requisição | Obrigatório | Sem fila nem estado persistido: se o processo cai durante o ffmpeg, o vídeo e o pedido se perdem (`uploads/` local, sem registro). | Fila durável com ack manual após conclusão; mensagem persistente; retry com DLQ; garantia de consistência entre "gravar Vídeo" e "publicar Job". | ~~A2~~ [ADR-0002](adr/0002-rabbitmq-mensageria.md), A3 |
 | RF03 | Protegido por usuário e senha | Obrigatório | Nenhuma autenticação; CORS `*` (`main.go:36`). | Cadastro/login com senha em hash forte; todas as rotas de vídeo exigem identidade. | A5 |
 | RF04 | Listagem de status dos vídeos de um usuário | Obrigatório | `/api/status` lista os zips de **todos** pelo filesystem (`main.go:254`); não existe "status" (só arquivos prontos), nem dono. | Vídeo persistido com dono e ciclo de status (ex.: recebido → processando → concluído / falhou); endpoint filtra pelo usuário autenticado. | ~~A1~~ [ADR-0001](adr/0001-api-worker-notifier.md), A7 |
 | RF05 | Em caso de erro, usuário pode ser notificado (e-mail ou outro) | Obrigatório (o "pode" se refere ao meio) | Não há notificação; o erro bruto do ffmpeg vaza na resposta (`main.go:146`). | Evento de falha publicado quando o Job esgota tentativas; consumidor de notificação envia e-mail; mensagem ao usuário sem detalhe interno. | A6 |
@@ -36,7 +36,7 @@ Cada requisito do [enunciado](enunciado.md) cruzado com o estado do projeto base
 | E03 | Link do GitHub do(s) projeto(s) | Obrigatório | Depende de RT03. |
 | E04 | Vídeo de até 10 min (docs, arquitetura, projeto funcionando) | Obrigatório | Roteiro no fim; mostrar escala e "não perder requisição" ao vivo. |
 | S01 | Docker + Kubernetes **ou** Compose | Recomendado | **Decidido: Docker + Compose**, partindo do Dockerfile do enunciado refeito com boas práticas (ver seção 5). |
-| S02 | RabbitMQ, Kafka ou similar | Recomendado | A2. |
+| S02 | RabbitMQ, Kafka ou similar | Recomendado | **Decidido: RabbitMQ** ([ADR-0002](adr/0002-rabbitmq-mensageria.md)). |
 | S03 | PostgreSQL + Redis (cache) | Recomendado | Postgres praticamente certo; Redis só com uso real (A7). |
 | S04 | Prometheus + Grafana, ELK… | Recomendado | A8. |
 | S05 | GitHub Actions | Recomendado | Adotado (RT05). |
@@ -48,7 +48,7 @@ Resolvidas uma a uma via `/wayfinder` ou `/grill-with-docs`, com aprovação do 
 | # | Pergunta | Opções principais | Afeta |
 |---|---|---|---|
 | A1 | Limites de serviço: quais processos existem? **Resolvida: [ADR-0001](adr/0001-api-worker-notifier.md) (a).** | (a) API + Worker + Notifier; (b) API + Worker, notificação dentro do worker; (c) separar Auth em serviço próprio | RF01, RF04, RT02 |
-| A2 | Mensageria | RabbitMQ (filas de trabalho, DLQ nativa, ack por mensagem) vs Kafka (log, replay, mais pesado) | RF01, RF02 |
+| A2 | Mensageria **Resolvida: [ADR-0002](adr/0002-rabbitmq-mensageria.md) (RabbitMQ).** | RabbitMQ (filas de trabalho, DLQ nativa, ack por mensagem) vs Kafka (log, replay, mais pesado) | RF01, RF02 |
 | A3 | Consistência "gravar Vídeo + publicar Job" | Publicar após commit (simples, janela de perda) vs Transactional Outbox (sem perda, mais código) vs reconciliador que reenfileira órfãos | RF02 |
 | A4 | Onde ficam vídeo e zip | MinIO (S3-compatível, escala, URL pré-assinada) vs volume compartilhado | RT01, RT02 |
 | A5 | Autenticação | JWT emitido pela própria API (bcrypt/argon2 + Postgres) vs IdP (Keycloak) | RF03 |
