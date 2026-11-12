@@ -1,0 +1,9 @@
+# Finais de linha LF no repositório e no checkout (Dockerfile, .sh e .go rodam em Linux)
+* text=auto eol=lf
+
+# Binários
+*.pdf binary
+*.png binary
+*.jpg binary
+*.zip binary
+*.mp4 binary
