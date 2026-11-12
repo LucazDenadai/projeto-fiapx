@@ -1,0 +1,31 @@
+# runtime do projeto base / dados locais
+uploads/
+outputs/
+temp/
+*.zip
+*.mp4
+*.mov
+*.mkv
+*.avi
+*.webm
+
+# Go
+/bin/
+*.exe
+*.test
+*.out
+coverage.*
+
+# ambiente
+.env
+.env.*
+!.env.example
+
+# editores / SO
+.idea/
+.vscode/
+.DS_Store
+__MACOSX/
+
+# Claude Code (pessoal)
+.claude/settings.local.json
