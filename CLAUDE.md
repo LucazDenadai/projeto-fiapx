@@ -36,3 +36,17 @@ Usuário envia vídeo → sistema extrai frames com ffmpeg → usuário baixa um
 - Toda I/O recebe `context.Context`; ffmpeg sempre com `exec.CommandContext` e timeout.
 - Erros embrulhados com `%w`; ao cliente só mensagem pública, detalhe vai para o log (`log/slog`, JSON).
 - Pronto = `gofmt`, `go vet ./...` e `go test -race ./...` verdes.
+
+## Agent skills
+
+### Issue tracker
+
+GitHub Issues em LucazDenadai/projeto-fiapx, via `gh`, com sub-issues e bloqueios nativos. Ver `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+As cinco labels padrão: `needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`. Ver `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Contexto único: `GLOSSARY.md` na raiz e `docs/adr/`. Ver `docs/agents/domain.md`.

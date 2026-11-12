@@ -27,4 +27,5 @@ Ficarão em `docs/diagramas/` (nenhum ainda).
 |---|---|
 | [`legacy/`](legacy/) | Projeto base entregue no enunciado (referência do "antes") |
 | [Handoff](docs/HANDOFF-fase5.md) | Contexto inicial da fase |
+| [Configuração das skills](docs/agents/) | Issue tracker, labels de triagem e layout de domínio usados pelas skills |
 | [CLAUDE.md](CLAUDE.md) | Regras e fluxo de trabalho com agentes |
