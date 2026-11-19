@@ -20,6 +20,7 @@ Em `docs/adr/`. Cada um resolve ambiguidades A1–A12 da [matriz](docs/matriz-re
 | [0001](docs/adr/0001-api-worker-notifier.md) | Três processos: API, Worker e Notifier | accepted | A1 (RF01, RF04, RT02) |
 | [0002](docs/adr/0002-rabbitmq-mensageria.md) | RabbitMQ com quorum queues para Processamento e eventos | accepted | A2 (RF01, RF02, S02) |
 | [0003](docs/adr/0003-transactional-outbox.md) | Transactional Outbox para publicar no RabbitMQ | accepted | A3 (RF02) |
+| [0004](docs/adr/0004-retry-e-dlq.md) | Política de retry e DLQ do Processamento e da notificação | accepted | Retry/DLQ (RF02, RF05) |
 
 ### Diagramas
 Ficarão em `docs/diagramas/` (nenhum ainda).

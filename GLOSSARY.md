@@ -19,3 +19,11 @@ _Evitar_: conversão, job
 **Zip de frames**:
 Arquivo compactado com os frames de um Vídeo, que o Usuário baixa.
 _Evitar_: output, resultado, pacote
+
+**Falha definitiva**:
+Fim de um Processamento sem Zip de frames, com o Vídeo marcado como falho e o Usuário notificado. Não há nova tentativa automática.
+_Evitar_: erro, crash
+
+**Motivo da falha**:
+Código público que explica ao Usuário por que um Vídeo teve Falha definitiva (`video_invalido`, `sem_frames`, `tempo_excedido`, `erro_interno`). Nunca contém detalhe interno.
+_Evitar_: mensagem de erro, stack
