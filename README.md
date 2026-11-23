@@ -21,6 +21,7 @@ Em `docs/adr/`. Cada um resolve ambiguidades A1–A12 da [matriz](docs/matriz-re
 | [0002](docs/adr/0002-rabbitmq-mensageria.md) | RabbitMQ com quorum queues para Processamento e eventos | accepted | A2 (RF01, RF02, S02) |
 | [0003](docs/adr/0003-transactional-outbox.md) | Transactional Outbox para publicar no RabbitMQ | accepted | A3 (RF02) |
 | [0004](docs/adr/0004-retry-e-dlq.md) | Política de retry e DLQ do Processamento e da notificação | accepted | Retry/DLQ (RF02, RF05) |
+| [0005](docs/adr/0005-volume-arquivos.md) | Volume nomeado do Docker para vídeos e zips | accepted | A4 (RT01, RT02) |
 
 ### Diagramas
 Ficarão em `docs/diagramas/` (nenhum ainda).

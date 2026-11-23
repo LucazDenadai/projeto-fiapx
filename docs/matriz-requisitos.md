@@ -21,7 +21,7 @@ Cada requisito do [enunciado](enunciado.md) cruzado com o estado do projeto base
 
 | ID | Requisito | Nível | Problema no projeto base | Como atender | Decisão pendente |
 |---|---|---|---|---|---|
-| RT01 | Persistir os dados | Obrigatório | Estado só em pastas locais (`uploads/`, `outputs/`, `temp/`); nenhum banco. | PostgreSQL para usuários/vídeos/status; armazenamento de objetos para vídeos e zips. | A4 |
+| RT01 | Persistir os dados | Obrigatório | Estado só em pastas locais (`uploads/`, `outputs/`, `temp/`); nenhum banco. | PostgreSQL para usuários/vídeos/status; volume nomeado do Docker para vídeos e zips. | ~~A4~~ [ADR-0005](adr/0005-volume-arquivos.md) |
 | RT02 | Arquitetura que permita escalar | Obrigatório | Um processo, disco local, sem separação entre receber e processar; não roda em duas réplicas. | API e worker separados e sem estado local; worker escala horizontalmente por consumidores competindo na fila (`docker compose up --scale worker=N`). | ~~A1~~ [ADR-0001](adr/0001-api-worker-notifier.md), A9 |
 | RT03 | Versionado no GitHub | Obrigatório | Não era repositório git. | Repo no GitHub; tickets em GitHub Issues; PRs. | — |
 | RT04 | Testes que garantam qualidade | Obrigatório | Nenhum teste. | TDD (unitários no domínio, integração com Postgres/fila/ffmpeg reais via containers); `go test -race`. | — |
@@ -32,7 +32,7 @@ Cada requisito do [enunciado](enunciado.md) cruzado com o estado do projeto base
 | ID | Item | Nível | Observação |
 |---|---|---|---|
 | E01 | Documentação da arquitetura | Obrigatório | ADRs em `docs/adr/` + diagramas em `docs/diagramas/` + README. |
-| E02 | Script de criação do banco e de outros recursos | Obrigatório | Migrations SQL versionadas + `docker-compose.yml` (fila, buckets, banco) como script de recursos. |
+| E02 | Script de criação do banco e de outros recursos | Obrigatório | Migrations SQL versionadas + `docker-compose.yml` (fila, volume, banco) como script de recursos. |
 | E03 | Link do GitHub do(s) projeto(s) | Obrigatório | Depende de RT03. |
 | E04 | Vídeo de até 10 min (docs, arquitetura, projeto funcionando) | Obrigatório | Roteiro no fim; mostrar escala e "não perder requisição" ao vivo. |
 | S01 | Docker + Kubernetes **ou** Compose | Recomendado | **Decidido: Docker + Compose**, partindo do Dockerfile do enunciado refeito com boas práticas (ver seção 5). |
@@ -50,14 +50,14 @@ Resolvidas uma a uma via `/wayfinder` ou `/grill-with-docs`, com aprovação do 
 | A1 | Limites de serviço: quais processos existem? **Resolvida: [ADR-0001](adr/0001-api-worker-notifier.md) (a).** | (a) API + Worker + Notifier; (b) API + Worker, notificação dentro do worker; (c) separar Auth em serviço próprio | RF01, RF04, RT02 |
 | A2 | Mensageria **Resolvida: [ADR-0002](adr/0002-rabbitmq-mensageria.md) (RabbitMQ).** | RabbitMQ (filas de trabalho, DLQ nativa, ack por mensagem) vs Kafka (log, replay, mais pesado) | RF01, RF02 |
 | A3 | Consistência "gravar Vídeo + publicar Job" **Resolvida: [ADR-0003](adr/0003-transactional-outbox.md) (Transactional Outbox).** | Publicar após commit (simples, janela de perda) vs Transactional Outbox (sem perda, mais código) vs reconciliador que reenfileira órfãos | RF02 |
-| A4 | Onde ficam vídeo e zip | MinIO (S3-compatível, escala, URL pré-assinada) vs volume compartilhado | RT01, RT02 |
+| A4 | Onde ficam vídeo e zip **Resolvida: [ADR-0005](adr/0005-volume-arquivos.md) (volume nomeado).** | MinIO (S3-compatível, escala, URL pré-assinada) vs volume compartilhado | RT01, RT02 |
 | A5 | Autenticação | JWT emitido pela própria API (bcrypt/argon2 + Postgres) vs IdP (Keycloak) | RF03 |
 | A6 | Meio de notificação | E-mail via SMTP de desenvolvimento (Mailpit) vs webhook vs outro | RF05 |
 | A7 | Redis: usar para quê? | Cache de status / rate limit / nada (não usar) | RF04, S03 |
 | A8 | Observabilidade | Prometheus + Grafana (métricas de fila e jobs) / + logs centralizados / só logs `slog` | S04, E04 |
 | A9 | Como demonstrar escala e limitar recursos | `--scale worker=N` + concorrência por worker; limites de tamanho/duração do vídeo | RT02, RF01 |
 | A10 | O que é o "CD" num projeto Compose local | Publicar imagens no GHCR / deploy em VM / só build | RT05 |
-| A11 | Upload: pela API ou direto no storage | Multipart pela API (simples) vs URL pré-assinada direto no MinIO (API não trafega bytes) | RF01, RT02 |
+| A11 | Upload: pela API ou direto no storage | Multipart pela API (simples) vs URL pré-assinada direto no storage (API não trafega bytes); a URL pré-assinada saiu com o [ADR-0005](adr/0005-volume-arquivos.md), que não usa object storage | RF01, RT02 |
 | A12 | Frontend | Manter página HTML simples servida pela API vs só API + coleção Postman | E04 |
 
 ## 5. Achados de segurança e qualidade no projeto base
