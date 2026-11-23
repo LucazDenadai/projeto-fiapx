@@ -27,3 +27,7 @@ _Evitar_: erro, crash
 **Motivo da falha**:
 Código público que explica ao Usuário por que um Vídeo teve Falha definitiva (`video_invalido`, `sem_frames`, `tempo_excedido`, `erro_interno`). Nunca contém detalhe interno.
 _Evitar_: mensagem de erro, stack
+
+**Notificação**:
+Aviso enviado ao Usuário, por e-mail, quando um Vídeo dele tem Falha definitiva. Diz o Motivo da falha; sucesso não gera Notificação.
+_Evitar_: alerta, mensagem

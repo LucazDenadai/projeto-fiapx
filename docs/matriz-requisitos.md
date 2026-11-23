@@ -15,7 +15,7 @@ Cada requisito do [enunciado](enunciado.md) cruzado com o estado do projeto base
 | RF02 | Em picos, não perder requisição | Obrigatório | Sem fila nem estado persistido: se o processo cai durante o ffmpeg, o vídeo e o pedido se perdem (`uploads/` local, sem registro). | Fila durável com ack manual após conclusão; mensagem persistente; retry com DLQ; garantia de consistência entre "gravar Vídeo" e "publicar Job". | ~~A2~~ [ADR-0002](adr/0002-rabbitmq-mensageria.md), ~~A3~~ [ADR-0003](adr/0003-transactional-outbox.md), [ADR-0004](adr/0004-retry-e-dlq.md) |
 | RF03 | Protegido por usuário e senha | Obrigatório | Nenhuma autenticação; CORS `*` (`main.go:36`). | Cadastro/login com senha em hash forte; todas as rotas de vídeo exigem identidade. | ~~A5~~ [ADR-0007](adr/0007-autenticacao-jwt-na-api.md) |
 | RF04 | Listagem de status dos vídeos de um usuário | Obrigatório | `/api/status` lista os zips de **todos** pelo filesystem (`main.go:254`); não existe "status" (só arquivos prontos), nem dono. | Vídeo persistido com dono e ciclo de status (ex.: recebido → processando → concluído / falhou); endpoint filtra pelo usuário autenticado. | ~~A1~~ [ADR-0001](adr/0001-api-worker-notifier.md), A7 |
-| RF05 | Em caso de erro, usuário pode ser notificado (e-mail ou outro) | Obrigatório (o "pode" se refere ao meio) | Não há notificação; o erro bruto do ffmpeg vaza na resposta (`main.go:146`). | Evento de falha publicado quando o Job esgota tentativas; consumidor de notificação envia e-mail; mensagem ao usuário sem detalhe interno. | [ADR-0004](adr/0004-retry-e-dlq.md) (retry, motivo público), A6 |
+| RF05 | Em caso de erro, usuário pode ser notificado (e-mail ou outro) | Obrigatório (o "pode" se refere ao meio) | Não há notificação; o erro bruto do ffmpeg vaza na resposta (`main.go:146`). | Evento de falha publicado quando o Job esgota tentativas; consumidor de notificação envia e-mail; mensagem ao usuário sem detalhe interno. | [ADR-0004](adr/0004-retry-e-dlq.md) (retry, motivo público), ~~A6~~ [ADR-0008](adr/0008-notificacao-por-email.md) |
 
 ## 2. Requisitos técnicos
 
@@ -52,7 +52,7 @@ Resolvidas uma a uma via `/wayfinder` ou `/grill-with-docs`, com aprovação do 
 | A3 | Consistência "gravar Vídeo + publicar Job" **Resolvida: [ADR-0003](adr/0003-transactional-outbox.md) (Transactional Outbox).** | Publicar após commit (simples, janela de perda) vs Transactional Outbox (sem perda, mais código) vs reconciliador que reenfileira órfãos | RF02 |
 | A4 | Onde ficam vídeo e zip **Resolvida: [ADR-0005](adr/0005-volume-arquivos.md) (volume nomeado).** | MinIO (S3-compatível, escala, URL pré-assinada) vs volume compartilhado | RT01, RT02 |
 | A5 | Autenticação **Resolvida: [ADR-0007](adr/0007-autenticacao-jwt-na-api.md) (e-mail + senha na API, JWT).** | JWT emitido pela própria API (bcrypt/argon2 + Postgres) vs IdP (Keycloak) | RF03 |
-| A6 | Meio de notificação | E-mail via SMTP de desenvolvimento (Mailpit) vs webhook vs outro | RF05 |
+| A6 | Meio de notificação **Resolvida: [ADR-0008](adr/0008-notificacao-por-email.md) (e-mail SMTP, Mailpit).** | E-mail via SMTP de desenvolvimento (Mailpit) vs webhook vs outro | RF05 |
 | A7 | Redis: usar para quê? | Cache de status / rate limit / nada (não usar) | RF04, S03 |
 | A8 | Observabilidade | Prometheus + Grafana (métricas de fila e jobs) / + logs centralizados / só logs `slog` | S04, E04 |
 | A9 | Como demonstrar escala e limitar recursos | `--scale worker=N` + concorrência por worker; limites de tamanho/duração do vídeo | RT02, RF01 |
