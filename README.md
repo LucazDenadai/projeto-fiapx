@@ -2,7 +2,21 @@
 
 Hackathon POSTECH SOAT (Fase 5). Envie um vídeo, o sistema extrai os frames e devolve um `.zip` para download.
 
-> Status: **levantamento de requisitos e arquitetura.** Ainda sem código de aplicação.
+> Status: **esqueleto andante** ([#19](https://github.com/LucazDenadai/projeto-fiapx/issues/19)): API, Worker e Notifier sobem saudáveis no Compose, ainda sem rotas de negócio.
+
+## Como rodar
+
+Requisitos: Docker Desktop (Compose v2) e, para os testes, Go e ffmpeg no PATH.
+
+```sh
+cp .env.example .env          # troque as senhas
+docker compose up -d --build  # migrate roda antes de API e Worker
+docker compose ps             # api, worker e notifier ficam healthy
+```
+
+Só a API publica porta (`API_PORT`, padrão 8080). A porta interna `9090` de cada processo (`/healthz`, `/readyz`) fica na rede do Compose.
+
+Testes: `go test -race ./...` sobe Postgres e RabbitMQ descartáveis com testcontainers (Docker precisa estar rodando); `go test -short ./...` pula a integração. O CI fica em [`.github/workflows/ci.yml`](.github/workflows/ci.yml).
 
 ## Índice
 
