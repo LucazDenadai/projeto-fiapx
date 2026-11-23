@@ -38,7 +38,7 @@ Cada requisito do [enunciado](enunciado.md) cruzado com o estado do projeto base
 | S01 | Docker + Kubernetes **ou** Compose | Recomendado | **Decidido: Docker + Compose**, partindo do Dockerfile do enunciado refeito com boas práticas (ver seção 5). |
 | S02 | RabbitMQ, Kafka ou similar | Recomendado | **Decidido: RabbitMQ** ([ADR-0002](adr/0002-rabbitmq-mensageria.md)). |
 | S03 | PostgreSQL + Redis (cache) | Recomendado | Postgres; Redis só para o limite de tentativas de login e cadastro, sem cache ([ADR-0009](adr/0009-redis-limite-de-tentativas.md)). |
-| S04 | Prometheus + Grafana, ELK… | Recomendado | A8. |
+| S04 | Prometheus + Grafana, ELK… | Recomendado | Prometheus + Grafana com dashboard versionado; logs JSON no stdout ([ADR-0010](adr/0010-observabilidade-prometheus-grafana.md)). |
 | S05 | GitHub Actions | Recomendado | Adotado (RT05). |
 
 ## 4. Ambiguidades a resolver (viram ADRs)
@@ -54,7 +54,7 @@ Resolvidas uma a uma via `/wayfinder` ou `/grill-with-docs`, com aprovação do 
 | A5 | Autenticação **Resolvida: [ADR-0007](adr/0007-autenticacao-jwt-na-api.md) (e-mail + senha na API, JWT).** | JWT emitido pela própria API (bcrypt/argon2 + Postgres) vs IdP (Keycloak) | RF03 |
 | A6 | Meio de notificação **Resolvida: [ADR-0008](adr/0008-notificacao-por-email.md) (e-mail SMTP, Mailpit).** | E-mail via SMTP de desenvolvimento (Mailpit) vs webhook vs outro | RF05 |
 | A7 | Redis: usar para quê? **Resolvida: [ADR-0009](adr/0009-redis-limite-de-tentativas.md) (só limite de tentativas).** | Cache de status / rate limit / nada (não usar) | RF04, S03 |
-| A8 | Observabilidade | Prometheus + Grafana (métricas de fila e jobs) / + logs centralizados / só logs `slog` | S04, E04 |
+| A8 | Observabilidade **Resolvida: [ADR-0010](adr/0010-observabilidade-prometheus-grafana.md) (Prometheus + Grafana, sem logs centralizados).** | Prometheus + Grafana (métricas de fila e jobs) / + logs centralizados / só logs `slog` | S04, E04 |
 | A9 | Como demonstrar escala e limitar recursos | `--scale worker=N` + concorrência por worker; limites de tamanho/duração do vídeo | RT02, RF01 |
 | A10 | O que é o "CD" num projeto Compose local | Publicar imagens no GHCR / deploy em VM / só build | RT05 |
 | A11 | Upload: pela API ou direto no storage **Resolvida: [ADR-0006](adr/0006-envio-e-download-pela-api.md) (multipart em streaming pela API).** | Multipart pela API (simples) vs URL pré-assinada direto no storage (API não trafega bytes); a URL pré-assinada saiu com o [ADR-0005](adr/0005-volume-arquivos.md), que não usa object storage | RF01, RT02 |

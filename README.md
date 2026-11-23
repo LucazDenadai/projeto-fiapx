@@ -26,6 +26,7 @@ Em `docs/adr/`. Cada um resolve ambiguidades A1–A12 da [matriz](docs/matriz-re
 | [0007](docs/adr/0007-autenticacao-jwt-na-api.md) | Cadastro e login por e-mail e senha na própria API, com JWT | accepted | A5 (RF03) |
 | [0008](docs/adr/0008-notificacao-por-email.md) | Notificação de Falha definitiva por e-mail (SMTP, Mailpit no Compose) | accepted | A6 (RF05) |
 | [0009](docs/adr/0009-redis-limite-de-tentativas.md) | Redis só para o limite de tentativas de login e cadastro | accepted | A7 (RF04, S03) |
+| [0010](docs/adr/0010-observabilidade-prometheus-grafana.md) | Observabilidade com Prometheus + Grafana, logs JSON no stdout | accepted | A8 (S04, E04) |
 
 ### Diagramas
 Ficarão em `docs/diagramas/` (nenhum ainda).
