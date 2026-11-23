@@ -58,7 +58,7 @@ Resolvidas uma a uma via `/wayfinder` ou `/grill-with-docs`, com aprovação do 
 | A9 | Como demonstrar escala e limitar recursos **Resolvida: [ADR-0011](adr/0011-escala-e-limites.md) (escala pelo Worker, limites por camada).** | `--scale worker=N` + concorrência por worker; limites de tamanho/duração do vídeo | RT02, RF01 |
 | A10 | O que é o "CD" num projeto Compose local **Resolvida: [ADR-0012](adr/0012-ci-cd-github-actions-ghcr.md) (GHCR + deploy efêmero no runner).** | Publicar imagens no GHCR / deploy em VM / só build | RT05 |
 | A11 | Upload: pela API ou direto no storage **Resolvida: [ADR-0006](adr/0006-envio-e-download-pela-api.md) (multipart em streaming pela API).** | Multipart pela API (simples) vs URL pré-assinada direto no storage (API não trafega bytes); a URL pré-assinada saiu com o [ADR-0005](adr/0005-volume-arquivos.md), que não usa object storage | RF01, RT02 |
-| A12 | Frontend | Manter página HTML simples servida pela API vs só API + coleção Postman | E04 |
+| A12 | Frontend **Resolvida: [ADR-0013](adr/0013-sem-frontend-colecao-postman.md) (sem frontend, coleção do Postman).** | Manter página HTML simples servida pela API vs só API + coleção Postman | E04 |
 
 ## 5. Achados de segurança e qualidade no projeto base
 
