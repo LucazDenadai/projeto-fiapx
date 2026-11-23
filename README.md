@@ -31,6 +31,7 @@ Em `docs/adr/`. Cada um resolve ambiguidades A1–A12 da [matriz](docs/matriz-re
 | [0012](docs/adr/0012-ci-cd-github-actions-ghcr.md) | CI/CD: GitHub Actions, imagens no GHCR e deploy efêmero no runner | accepted | A10 (RT05) |
 | [0013](docs/adr/0013-sem-frontend-colecao-postman.md) | Sem frontend: a API é usada por uma coleção do Postman versionada | accepted | A12 (E01, E04) |
 | [0014](docs/adr/0014-ciclo-de-vida-do-video.md) | Ciclo de vida do Vídeo: quatro estados, transições só para a frente | accepted | Ciclo de vida (RF04, RF02) |
+| [0015](docs/adr/0015-retencao-e-limpeza.md) | Retenção: original apagado ao terminar, zip por 7 dias, limpador no Worker | accepted | Retenção (RT01, RT02) |
 
 ### Diagramas
 Ficarão em `docs/diagramas/` (nenhum ainda).

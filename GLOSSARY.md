@@ -17,7 +17,7 @@ Extração dos frames de um Vídeo e seu empacotamento em um Zip de frames.
 _Evitar_: conversão, job
 
 **Zip de frames**:
-Arquivo compactado com os frames de um Vídeo, que o Usuário baixa.
+Arquivo compactado com os frames de um Vídeo, que o Usuário baixa. Fica disponível por tempo limitado; depois expira e não pode mais ser baixado.
 _Evitar_: output, resultado, pacote
 
 **Status do Vídeo**:
