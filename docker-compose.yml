@@ -70,6 +70,7 @@ services:
       RABBITMQ_URL: *rabbitmq-url
       REDIS_URL: redis://redis:6379/0
       DATA_DIR: /data
+      JWT_SECRET: ${JWT_SECRET:?defina JWT_SECRET no .env}
     volumes:
       - dados:/data
     healthcheck:

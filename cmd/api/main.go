@@ -16,6 +16,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/LucazDenadai/projeto-fiapx/internal/api"
 	"github.com/LucazDenadai/projeto-fiapx/internal/armazenamento"
 	"github.com/LucazDenadai/projeto-fiapx/internal/banco"
 	"github.com/LucazDenadai/projeto-fiapx/internal/mensageria"
@@ -71,6 +72,10 @@ func servir(ctx context.Context, log *slog.Logger) error {
 	if err != nil {
 		return err
 	}
+	segredoJWT, err := processo.Exigir("JWT_SECRET")
+	if err != nil {
+		return err
+	}
 	dados := processo.Variavel("DATA_DIR", "/data")
 
 	pool, err := banco.Abrir(ctx, dbURL)
@@ -79,9 +84,13 @@ func servir(ctx context.Context, log *slog.Logger) error {
 	}
 	defer pool.Close()
 
+	rotas, err := api.Novo(api.Config{Pool: pool, SegredoJWT: []byte(segredoJWT), Log: log})
+	if err != nil {
+		return err
+	}
 	publico := &http.Server{
 		Addr:              processo.Variavel("HTTP_ADDR", ":8080"),
-		Handler:           http.NewServeMux(), // rotas de negócio chegam nos próximos tickets
+		Handler:           rotas,
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 	interno := processo.ServidorInterno(log,

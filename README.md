@@ -2,19 +2,21 @@
 
 Hackathon POSTECH SOAT (Fase 5). Envie um vídeo, o sistema extrai os frames e devolve um `.zip` para download.
 
-> Status: **esqueleto andante** ([#19](https://github.com/LucazDenadai/projeto-fiapx/issues/19)): API, Worker e Notifier sobem saudáveis no Compose, ainda sem rotas de negócio.
+> Status: **cadastro e login** ([#21](https://github.com/LucazDenadai/projeto-fiapx/issues/21)): a API cadastra Usuários e emite JWT; as rotas de Vídeo já exigem token, mas ainda respondem `501`.
 
 ## Como rodar
 
 Requisitos: Docker Desktop (Compose v2) e, para os testes, Go e ffmpeg no PATH.
 
 ```sh
-cp .env.example .env          # troque as senhas
+cp .env.example .env          # troque as senhas e o JWT_SECRET
 docker compose up -d --build  # migrate roda antes de API e Worker
 docker compose ps             # api, worker e notifier ficam healthy
 ```
 
 Só a API publica porta (`API_PORT`, padrão 8080). A porta interna `9090` de cada processo (`/healthz`, `/readyz`) fica na rede do Compose.
+
+Para usar a API, importe no Postman a coleção e o ambiente de [`docs/api/`](docs/api/) e rode **Cadastro** e **Login**: o token fica salvo e vai sozinho nas rotas de Vídeo.
 
 Testes: `go test -race ./...` sobe Postgres e RabbitMQ descartáveis com testcontainers (Docker precisa estar rodando); `go test -short ./...` pula a integração. O CI fica em [`.github/workflows/ci.yml`](.github/workflows/ci.yml).
 
@@ -54,6 +56,7 @@ Ficarão em `docs/diagramas/` (nenhum ainda).
 ### Outros
 | Documento | Descrição |
 |---|---|
+| [Coleção do Postman](docs/api/fiapx.postman_collection.json) ([ambiente](docs/api/fiapx.postman_environment.json)) | Interface e documentação da API: rotas, códigos de resposta e token salvo pelo login (ADR-0013) |
 | [Glossário](GLOSSARY.md) | Vocabulário do domínio (Usuário, Vídeo, Processamento, Zip de frames) |
 | [`legacy/`](legacy/) | Projeto base entregue no enunciado (referência do "antes") |
 | [Handoff](docs/HANDOFF-fase5.md) | Contexto inicial da fase |
