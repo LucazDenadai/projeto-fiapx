@@ -1,106 +1,19 @@
 package api_test
 
 import (
-	"bytes"
-	"encoding/json"
-	"io"
 	"log/slog"
 	"net/http"
-	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
-	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/redis/go-redis/v9"
 
 	"github.com/LucazDenadai/projeto-fiapx/internal/api"
 	"github.com/LucazDenadai/projeto-fiapx/internal/integracao"
+	"github.com/LucazDenadai/projeto-fiapx/internal/limite"
 )
-
-func TestMain(m *testing.M) { integracao.Principal(m) }
-
-const segredoTeste = "segredo-de-teste-com-pelo-menos-32-bytes!"
-
-type cliente struct {
-	t   *testing.T
-	srv *httptest.Server
-}
-
-type resposta struct {
-	status int
-	corpo  map[string]any
-}
-
-// fazerComEsquema manda a requisição com "Authorization: <esquema> <token>";
-// token vazio omite o header.
-func (c cliente) fazerComEsquema(metodo, rota, esquema, token string, corpo any) resposta {
-	c.t.Helper()
-	var leitor io.Reader
-	if corpo != nil {
-		b, err := json.Marshal(corpo)
-		if err != nil {
-			c.t.Fatalf("marshal: %v", err)
-		}
-		leitor = bytes.NewReader(b)
-	}
-	req, err := http.NewRequestWithContext(c.t.Context(), metodo, c.srv.URL+rota, leitor)
-	if err != nil {
-		c.t.Fatalf("nova requisição: %v", err)
-	}
-	if corpo != nil {
-		req.Header.Set("Content-Type", "application/json")
-	}
-	if token != "" {
-		req.Header.Set("Authorization", esquema+" "+token)
-	}
-	res, err := c.srv.Client().Do(req)
-	if err != nil {
-		c.t.Fatalf("%s %s: %v", metodo, rota, err)
-	}
-	defer func() { _ = res.Body.Close() }()
-	r := resposta{status: res.StatusCode}
-	b, _ := io.ReadAll(res.Body)
-	if len(b) > 0 {
-		_ = json.Unmarshal(b, &r.corpo)
-	}
-	return r
-}
-
-func (c cliente) fazer(metodo, rota, token string, corpo any) resposta {
-	c.t.Helper()
-	return c.fazerComEsquema(metodo, rota, "Bearer", token, corpo)
-}
-
-func (c cliente) cadastrar(email, senha string) resposta {
-	c.t.Helper()
-	return c.fazer(http.MethodPost, "/usuarios", "", credenciais(email, senha))
-}
-
-func (c cliente) entrar(email, senha string) resposta {
-	c.t.Helper()
-	return c.fazer(http.MethodPost, "/login", "", credenciais(email, senha))
-}
-
-func credenciais(email, senha string) map[string]string {
-	return map[string]string{"email": email, "senha": senha}
-}
-
-func subirAPI(t *testing.T) (cliente, *pgxpool.Pool) {
-	t.Helper()
-	pool := integracao.Postgres(t)
-	h, err := api.Novo(api.Config{
-		Pool:       pool,
-		SegredoJWT: []byte(segredoTeste),
-		Log:        slog.New(slog.DiscardHandler),
-	})
-	if err != nil {
-		t.Fatalf("api.Novo: %v", err)
-	}
-	srv := httptest.NewServer(h)
-	t.Cleanup(srv.Close)
-	return cliente{t: t, srv: srv}, pool
-}
 
 func TestCadastro_GuardaEmailEmMinusculasESoOHash(t *testing.T) {
 	c, pool := subirAPI(t)
@@ -124,7 +37,10 @@ func TestCadastro_GuardaEmailEmMinusculasESoOHash(t *testing.T) {
 }
 
 func TestCadastro_SenhaForaDaRegraDiz400ComOQueFalta(t *testing.T) {
-	c, _ := subirAPI(t)
+	// Mais tentativas que o limite de cadastro por IP permite.
+	regras := limite.RegrasPadrao()
+	regras.CadastroPorIP.Max = 100
+	c, _ := subirAPIComRegras(t, regras)
 	casos := []struct{ senha, falta string }{
 		{"Curta#1", "de 8 a 128 caracteres"},
 		{"semmaius#1", "uma letra maiúscula"},
@@ -237,8 +153,10 @@ func TestRotaDeVideo_AceitaOTokenDoLogin(t *testing.T) {
 
 func TestNovo_ExigeSegredoDoJWT(t *testing.T) {
 	pool := integracao.Postgres(t)
+	log := slog.New(slog.DiscardHandler)
+	tentativas := novasTentativas(t, &redis.Options{}, limite.Config{Regras: limite.RegrasPadrao()})
 	for nome, segredo := range map[string][]byte{"ausente": nil, "curto": []byte("curto")} {
-		_, err := api.Novo(api.Config{Pool: pool, SegredoJWT: segredo, Log: slog.New(slog.DiscardHandler)})
+		_, err := api.Novo(api.Config{Pool: pool, SegredoJWT: segredo, Log: log, Tentativas: tentativas})
 		if err == nil {
 			t.Errorf("segredo %s: api.Novo deveria falhar", nome)
 		}

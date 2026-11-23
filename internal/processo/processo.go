@@ -10,6 +10,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"strconv"
 	"time"
 
 	"github.com/LucazDenadai/projeto-fiapx/internal/observabilidade"
@@ -24,6 +25,39 @@ func Variavel(nome, padrao string) string {
 		return v
 	}
 	return padrao
+}
+
+// Inteiro lê uma variável de ambiente inteira e positiva, com valor padrão.
+func Inteiro(nome string, padrao int64) (int64, error) {
+	v := os.Getenv(nome)
+	if v == "" {
+		return padrao, nil
+	}
+	n, err := strconv.ParseInt(v, 10, 64)
+	if err != nil {
+		return 0, fmt.Errorf("variável de ambiente %s: %w", nome, err)
+	}
+	if n <= 0 {
+		return 0, fmt.Errorf("variável de ambiente %s=%q: quero inteiro positivo", nome, v)
+	}
+	return n, nil
+}
+
+// Duracao lê uma variável de ambiente de duração positiva (ex.: 15m, 1h), com
+// valor padrão.
+func Duracao(nome string, padrao time.Duration) (time.Duration, error) {
+	v := os.Getenv(nome)
+	if v == "" {
+		return padrao, nil
+	}
+	d, err := time.ParseDuration(v)
+	if err != nil {
+		return 0, fmt.Errorf("variável de ambiente %s: %w", nome, err)
+	}
+	if d <= 0 {
+		return 0, fmt.Errorf("variável de ambiente %s=%q: quero duração positiva (ex.: 15m)", nome, v)
+	}
+	return d, nil
 }
 
 // Exigir lê uma variável de ambiente obrigatória.

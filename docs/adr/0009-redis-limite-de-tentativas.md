@@ -19,8 +19,9 @@ A stack recomendada sugere "PostgreSQL + Redis (cache)" (S03), sem exigir. O [AD
   - cadastro: 5 por IP por hora.
 
   Um login bem-sucedido apaga o contador daquele e-mail. Estourou o limite: `429` com `Retry-After`.
+- **No login, o contador do e-mail soma toda tentativa, antes de conferir a senha.** Como o sucesso apaga o contador, o efeito é o de "5 falhas seguidas". Contar só depois da falha deixaria tentativas paralelas passarem do limite antes de o contador subir. E-mail vazio não tem contador.
 - **IP do cliente:** vem de `RemoteAddr`. A API é exposta direto, sem proxy reverso, então `X-Forwarded-For` é ignorado, porque o cliente poderia forjá-lo.
-- **Redis fora do ar: deixar passar sem limite (fail-open).** Login e cadastro seguem sem limite, com log de erro e métrica. O Redis é proteção auxiliar; a fonte de verdade é o Postgres. A chamada ao Redis tem timeout curto, para não segurar o login.
+- **Redis fora do ar: deixar passar sem limite (fail-open).** Login e cadastro seguem sem limite, com log de erro e métrica. O Redis é proteção auxiliar; a fonte de verdade é o Postgres. A chamada ao Redis tem timeout curto (200 ms, configurável), para não segurar o login; o cliente go-redis precisa de `ContextTimeoutEnabled`, senão ignora o prazo do contexto. A métrica das falhas do Redis entra com o Prometheus (ADR-0010).
 - **Redis efêmero e interno:** sem persistência (nem RDB nem AOF), com `maxmemory` e política `volatile-ttl`. Sem porta exposta fora da rede do Compose. Perder os dados num reinício só zera as janelas.
 - **Sem cache da listagem (RF04):** a listagem consulta o Postgres direto, por `usuario_id` com índice.
 
@@ -39,5 +40,5 @@ A stack recomendada sugere "PostgreSQL + Redis (cache)" (S03), sem exigir. O [AD
 - Com o Redis fora, não há limite de tentativas até ele voltar. O alerta vem pela métrica (A8).
 - Usuários atrás do mesmo IP (NAT) compartilham o limite por IP. O limite por e-mail continua individual.
 - O limite por e-mail permite a um atacante bloquear o login de uma vítima por 15 min. Esse risco é aceito, porque a janela é curta e configurável.
-- Os testes de integração do limite rodam contra um Redis real (container de teste). O fail-open é testado com o Redis parado.
+- Os testes de integração do limite rodam contra um Redis real (container de teste). O fail-open é testado com o Redis fora do ar (conexão recusada) e travado (aceita a conexão e não responde).
 - Mudanças nesse código passam pelo `/security-review` (regra do `CLAUDE.md`: auth).
