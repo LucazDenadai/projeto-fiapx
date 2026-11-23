@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "FIAP X — processamento de vídeos",
-    "description": "Interface, documentação e smoke test da API (ADR-0013).\n\nRode em ordem: **Cadastro** gera um e-mail novo a cada execução, e **Login** salva o token na variável de coleção `token`, que as rotas de Vídeo mandam como `Authorization: Bearer` sozinhas.\n\nErros vêm como `{\"erro\": \"mensagem pública\"}`.",
+    "description": "Interface, documentação e smoke test da API (ADR-0013).\n\nRode em ordem: **Cadastro** gera um e-mail novo a cada execução, e **Login** salva o token na variável de coleção `token`, que as rotas de Vídeo mandam como `Authorization: Bearer` sozinhas.\n\nErros vêm como `{\"erro\": \"mensagem pública\"}`.\n\n**Enviar vídeo** usa o `video.mp4` de 5 s versionado ao lado da coleção. No newman, rode de dentro de `docs/api/` ou passe `--working-dir docs/api`.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "auth": {
@@ -21,6 +21,10 @@
     },
     {
       "key": "email",
+      "value": ""
+    },
+    {
+      "key": "video_id",
       "value": ""
     }
   ],
@@ -126,6 +130,115 @@
               "  pm.expect(new Date(corpo.expira_em).getTime()).to.be.above(Date.now());",
               "});",
               "pm.collectionVariables.set('token', corpo.token);"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Enviar vídeo",
+      "request": {
+        "method": "POST",
+        "url": {
+          "raw": "{{base_url}}/videos",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "videos"
+          ]
+        },
+        "body": {
+          "mode": "formdata",
+          "formdata": [
+            {
+              "key": "video",
+              "type": "file",
+              "src": "video.mp4"
+            }
+          ]
+        },
+        "description": "Envia um Vídeo (`multipart/form-data`, campo `video`, um arquivo por requisição). O Processamento é assíncrono: acompanhe pelo `Location`.\n\n- `202` `{\"id\": \"...\", \"status\": \"recebido\"}` com `Location: /videos/{id}`.\n- `400` nenhum arquivo, mais de um arquivo ou campo diferente de `video`.\n- `401` sem token ou token inválido.\n- `413` arquivo acima do tamanho máximo (padrão 500 MB).\n- `415` o conteúdo não é vídeo (conferido pelos primeiros bytes, não pela extensão)."
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('202 Accepted', () => pm.response.to.have.status(202));",
+              "const corpo = pm.response.json();",
+              "pm.test('status recebido e Location', () => {",
+              "  pm.expect(corpo.status).to.eql('recebido');",
+              "  pm.expect(pm.response.headers.get('Location')).to.eql('/videos/' + corpo.id);",
+              "});",
+              "pm.collectionVariables.set('video_id', corpo.id);"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Listar vídeos",
+      "request": {
+        "method": "GET",
+        "url": {
+          "raw": "{{base_url}}/videos?limite=20",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "videos"
+          ],
+          "query": [
+            {
+              "key": "limite",
+              "value": "20"
+            }
+          ]
+        },
+        "description": "Lista os Vídeos do Usuário do token, do mais recente para o mais antigo.\n\n- `limite` de 1 a 100 (padrão 20); `cursor` vem de `proximo_cursor` da página anterior.\n- `200` `{\"videos\": [...], \"proximo_cursor\": \"...\"}`; sem `proximo_cursor` na última página.\n- Cada item: `id`, `nome_original`, `status` (`recebido`, `processando`, `concluido`, `falhou`), `criado_em`, `atualizado_em`. Em `falhou`: `motivo` (`video_invalido`, `video_muito_longo`, `sem_frames`, `tempo_excedido`, `erro_interno`) e `motivo_texto`. Em `concluido`: `download` e `zip_expira_em`.\n- `400` `limite` fora da faixa ou `cursor` inválido. `401` sem token."
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('200 OK', () => pm.response.to.have.status(200));",
+              "pm.test('inclui o vídeo enviado', () => {",
+              "  const ids = pm.response.json().videos.map(v => v.id);",
+              "  pm.expect(ids).to.include(pm.collectionVariables.get('video_id'));",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Consultar vídeo",
+      "request": {
+        "method": "GET",
+        "url": {
+          "raw": "{{base_url}}/videos/{{video_id}}",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "videos",
+            "{{video_id}}"
+          ]
+        },
+        "description": "Um Vídeo do Usuário do token, com os mesmos campos da listagem.\n\n- `200` o Vídeo.\n- `404` `vídeo não encontrado`: id inexistente ou Vídeo de outro Usuário (mesma resposta).\n- `401` sem token."
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('200 OK', () => pm.response.to.have.status(200));",
+              "pm.test('é o vídeo enviado', () => pm.expect(pm.response.json().id).to.eql(pm.collectionVariables.get('video_id')));"
             ]
           }
         }

@@ -92,6 +92,14 @@ func servir(ctx context.Context, log *slog.Logger) error {
 		return err
 	}
 	dados := processo.Variavel("DATA_DIR", "/data")
+	tamanhoMaxMB, err := processo.Inteiro("ENVIO_TAMANHO_MAX_MB", api.TamanhoMaxEnvioPadrao>>20)
+	if err != nil {
+		return err
+	}
+	timeoutEnvio, err := processo.Duracao("ENVIO_TIMEOUT", api.TimeoutEnvioPadrao)
+	if err != nil {
+		return err
+	}
 
 	pool, err := banco.Abrir(ctx, dbURL)
 	if err != nil {
@@ -103,10 +111,13 @@ func servir(ctx context.Context, log *slog.Logger) error {
 	defer func() { _ = tentativas.Fechar() }()
 
 	rotas, err := api.Novo(api.Config{
-		Pool:       pool,
-		SegredoJWT: []byte(segredoJWT),
-		Log:        log,
-		Tentativas: tentativas,
+		Pool:            pool,
+		SegredoJWT:      []byte(segredoJWT),
+		Log:             log,
+		Tentativas:      tentativas,
+		DirDados:        dados,
+		TamanhoMaxEnvio: tamanhoMaxMB << 20,
+		TimeoutEnvio:    timeoutEnvio,
 	})
 	if err != nil {
 		return err
@@ -115,6 +126,9 @@ func servir(ctx context.Context, log *slog.Logger) error {
 		Addr:              processo.Variavel("HTTP_ADDR", ":8080"),
 		Handler:           rotas,
 		ReadHeaderTimeout: 5 * time.Second,
+		// Curto para todas as rotas; o envio estende o prazo só para si.
+		ReadTimeout: 30 * time.Second,
+		IdleTimeout: 2 * time.Minute,
 	}
 	interno := processo.ServidorInterno(log,
 		observabilidade.Dependencia{Nome: "postgres", Verificar: banco.Verificacao(pool)},

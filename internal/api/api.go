@@ -15,8 +15,10 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/LucazDenadai/projeto-fiapx/internal/armazenamento"
 	"github.com/LucazDenadai/projeto-fiapx/internal/auth"
 	"github.com/LucazDenadai/projeto-fiapx/internal/limite"
+	"github.com/LucazDenadai/projeto-fiapx/internal/videos"
 )
 
 // Config reúne as dependências da API.
@@ -25,34 +27,60 @@ type Config struct {
 	SegredoJWT []byte
 	Log        *slog.Logger
 	Tentativas *limite.Tentativas
+	// DirDados é a raiz do volume de arquivos (/data no Compose).
+	DirDados string
+	// TamanhoMaxEnvio e TimeoutEnvio valem só para POST /videos; zero usa os
+	// padrões (500 MB e 10 min).
+	TamanhoMaxEnvio int64
+	TimeoutEnvio    time.Duration
 }
 
 // Novo devolve o roteador público. Falha se a configuração estiver incompleta,
 // por exemplo sem o segredo do JWT.
 func Novo(cfg Config) (http.Handler, error) {
-	if cfg.Pool == nil || cfg.Log == nil || cfg.Tentativas == nil {
-		return nil, errors.New("api: Pool, Log e Tentativas são obrigatórios")
+	if cfg.Pool == nil || cfg.Log == nil || cfg.Tentativas == nil || cfg.DirDados == "" {
+		return nil, errors.New("api: Pool, Log, Tentativas e DirDados são obrigatórios")
+	}
+	if cfg.TamanhoMaxEnvio <= 0 {
+		cfg.TamanhoMaxEnvio = TamanhoMaxEnvioPadrao
+	}
+	if cfg.TimeoutEnvio <= 0 {
+		cfg.TimeoutEnvio = TimeoutEnvioPadrao
 	}
 	servico, err := auth.NovoServico(auth.NovoRepositorio(cfg.Pool), cfg.SegredoJWT)
 	if err != nil {
 		return nil, fmt.Errorf("api: %w", err)
 	}
-	a := &aplicacao{log: cfg.Log, auth: servico, tentativas: cfg.Tentativas}
+	a := &aplicacao{
+		log:             cfg.Log,
+		auth:            servico,
+		tentativas:      cfg.Tentativas,
+		videos:          videos.NovoServico(cfg.Pool, armazenamento.NovoVolume(cfg.DirDados), cfg.Log),
+		tamanhoMaxEnvio: cfg.TamanhoMaxEnvio,
+		timeoutEnvio:    cfg.TimeoutEnvio,
+	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /usuarios", a.cadastrar)
 	mux.HandleFunc("POST /login", a.entrar)
 
-	// Rotas de Vídeo: só com token. Os handlers chegam no ticket #23.
-	videos := servico.Exigir(http.HandlerFunc(naoImplementado))
-	mux.Handle("/videos", videos)
-	mux.Handle("/videos/", videos)
+	// Rotas de Vídeo: só com token.
+	rotasVideo := http.NewServeMux()
+	rotasVideo.HandleFunc("POST /videos", a.enviar)
+	rotasVideo.HandleFunc("GET /videos", a.listar)
+	rotasVideo.HandleFunc("GET /videos/{id}", a.consultar)
+	protegidas := servico.Exigir(rotasVideo)
+	mux.Handle("/videos", protegidas)
+	mux.Handle("/videos/", protegidas)
 	return mux, nil
 }
 
 type aplicacao struct {
-	log        *slog.Logger
-	auth       *auth.Servico
-	tentativas *limite.Tentativas
+	log             *slog.Logger
+	auth            *auth.Servico
+	tentativas      *limite.Tentativas
+	videos          *videos.Servico
+	tamanhoMaxEnvio int64
+	timeoutEnvio    time.Duration
 }
 
 // ipDoCliente vem só de RemoteAddr: a API é exposta direto, sem proxy, e o
@@ -156,8 +184,4 @@ func (a *aplicacao) entrar(w http.ResponseWriter, r *http.Request) {
 	default:
 		a.erroInterno(w, r, err)
 	}
-}
-
-func naoImplementado(w http.ResponseWriter, _ *http.Request) {
-	responderErro(w, http.StatusNotImplemented, "ainda não implementado")
 }
