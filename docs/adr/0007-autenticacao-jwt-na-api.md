@@ -20,7 +20,7 @@ RF03 exige que o sistema seja "protegido por usuário e senha". O projeto base n
 - **Login: `POST /login`**, com `{email, senha}`, devolve `{token, expira_em}`.
   - E-mail inexistente e senha errada respondem o mesmo `401 credenciais inválidas`.
   - Para e-mail inexistente, a API compara a senha com um hash fictício. Assim o tempo de resposta não revela se o e-mail existe.
-- **Token: JWT HS256**, com segredo vindo de variável de ambiente.
+- **Token: JWT HS256**, com segredo vindo de variável de ambiente (`JWT_SECRET`), de no mínimo 32 bytes (256 bits, o tamanho da saída do HMAC-SHA256).
   - Claims: `sub` (id do Usuário), `iat` e `exp` (1h). Sem refresh token: expirou, faz login de novo.
   - A validação exige o algoritmo HS256 explicitamente, o que rejeita `alg: none` e troca de algoritmo, e confere o `exp`.
 - **Transporte: `Authorization: Bearer <token>`** em todas as rotas de Vídeo. Sem token ou com token inválido: `401`. O id do Usuário vem do token, nunca do corpo ou da URL.
@@ -46,6 +46,6 @@ RF03 exige que o sistema seja "protegido por usuário e senha". O projeto base n
 - As regras de composição aceitam senhas previsíveis como `Senha@123`.
 - O logout é só do cliente (descartar o token). Um token vazado vale até expirar, em no máximo 1h. Trocar o segredo invalida todos os tokens.
 - No vídeo, dois Usuários se cadastram pela API e mostram o isolamento: a listagem vem filtrada por Usuário e o download do Vídeo de outro Usuário dá `404` (ADR-0006).
-- O segredo do JWT é obrigatório na subida da API: sem ele, a API não sobe.
+- O segredo do JWT é obrigatório na subida da API: ausente ou com menos de 32 bytes, a API não sobe. Um segredo curto seria quebrável por força bruta offline a partir de qualquer token emitido.
 - Mudanças em `internal/auth` passam pelo `/security-review` (regra do `CLAUDE.md`).
 - O limite de tentativas depende do A7 para definir onde o contador fica.
