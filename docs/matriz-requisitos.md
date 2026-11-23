@@ -24,7 +24,7 @@ Cada requisito do [enunciado](enunciado.md) cruzado com o estado do projeto base
 | RT01 | Persistir os dados | Obrigatório | Estado só em pastas locais (`uploads/`, `outputs/`, `temp/`); nenhum banco. | PostgreSQL para usuários/vídeos/status; volume nomeado do Docker para vídeos e zips. | ~~A4~~ [ADR-0005](adr/0005-volume-arquivos.md) |
 | RT02 | Arquitetura que permita escalar | Obrigatório | Um processo, disco local, sem separação entre receber e processar; não roda em duas réplicas. | API e worker separados e sem estado local; worker escala horizontalmente por consumidores competindo na fila (`docker compose up --scale worker=N`). | ~~A1~~ [ADR-0001](adr/0001-api-worker-notifier.md), ~~A9~~ [ADR-0011](adr/0011-escala-e-limites.md) |
 | RT03 | Versionado no GitHub | Obrigatório | Não era repositório git. | Repo no GitHub; tickets em GitHub Issues; PRs. | — |
-| RT04 | Testes que garantam qualidade | Obrigatório | Nenhum teste. | TDD (unitários no domínio, integração com Postgres/fila/ffmpeg reais via containers); `go test -race`. | — |
+| RT04 | Testes que garantam qualidade | Obrigatório | Nenhum teste. | TDD (unitários no domínio, integração com Postgres/fila/ffmpeg reais via testcontainers-go); `go test -race`. | [ADR-0016](adr/0016-testes-de-integracao-e-migrations.md) |
 | RT05 | CI/CD | Obrigatório | Nenhum. | GitHub Actions: lint, testes, build de imagens; CD = publicar imagens no GHCR e deploy efêmero no runner com smoke test. | ~~A10~~ [ADR-0012](adr/0012-ci-cd-github-actions-ghcr.md) |
 
 ## 3. Entregáveis e stack
@@ -32,7 +32,7 @@ Cada requisito do [enunciado](enunciado.md) cruzado com o estado do projeto base
 | ID | Item | Nível | Observação |
 |---|---|---|---|
 | E01 | Documentação da arquitetura | Obrigatório | ADRs em `docs/adr/` + diagramas em `docs/diagramas/` + README. |
-| E02 | Script de criação do banco e de outros recursos | Obrigatório | Migrations SQL versionadas + `docker-compose.yml` (fila, volume, banco) como script de recursos. |
+| E02 | Script de criação do banco e de outros recursos | Obrigatório | Migrations SQL versionadas (goose, serviço `migrate`) + `docker-compose.yml` (fila, volume, banco) como script de recursos ([ADR-0016](adr/0016-testes-de-integracao-e-migrations.md)). |
 | E03 | Link do GitHub do(s) projeto(s) | Obrigatório | Depende de RT03. |
 | E04 | Vídeo de até 10 min (docs, arquitetura, projeto funcionando) | Obrigatório | Roteiro no fim; mostrar escala e "não perder requisição" ao vivo. |
 | S01 | Docker + Kubernetes **ou** Compose | Recomendado | **Decidido: Docker + Compose**, partindo do Dockerfile do enunciado refeito com boas práticas (ver seção 5). |
