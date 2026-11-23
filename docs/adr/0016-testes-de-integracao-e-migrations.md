@@ -20,7 +20,7 @@ O [ADR-0012](0012-ci-cd-github-actions-ghcr.md) roda o CI com Docker no runner. 
 
 **Testes de integração com containers reais criados pelo próprio `go test` (testcontainers-go). Migrations em SQL, só para a frente, com goose, aplicadas por um serviço de execução única.**
 
-- **testcontainers-go:** cada pacote que fala com Postgres, RabbitMQ ou Redis sobe um container descartável no próprio teste (`TestMain` do pacote), com as mesmas versões de imagem do `docker-compose.yml`. Os testes isolam o estado entre si: schema, vhost ou prefixo de chave por teste.
+- **testcontainers-go:** cada pacote que fala com Postgres, RabbitMQ ou Redis sobe um container descartável, um por pacote, com as mesmas versões de imagem do `docker-compose.yml`. O container sobe no primeiro teste que o pede e o `TestMain` do pacote o derruba no fim (helpers em `internal/integracao`). Os testes isolam o estado entre si: schema, vhost ou prefixo de chave por teste.
 - **Rodam por padrão:** `go test -race ./...` inclui a integração, então a regra de "pronto" do `CLAUDE.md` a cobre. Com `-short`, os testes de integração são pulados, para o ciclo rápido do TDD. Sem build tags.
 - **ffmpeg real:** os testes do Worker usam o ffmpeg do PATH, com vídeo gerado na hora (`testsrc`), sem binário versionado. Sem ffmpeg no PATH, o teste **falha** com uma mensagem dizendo como instalar (`winget install ffmpeg`, `apt install ffmpeg`). O CI instala o ffmpeg.
 - **Camadas de teste:**

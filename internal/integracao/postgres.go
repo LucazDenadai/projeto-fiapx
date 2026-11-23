@@ -1,9 +1,9 @@
 // Package integracao sobe dependências reais em testcontainers para os testes
 // de integração (ADR-0016). Só código de teste importa este pacote.
 //
-// Uso: o TestMain do pacote chama Principal, que sobe um Postgres para o
-// pacote todo; cada teste chama Postgres, que cria um schema só dele com as
-// migrations aplicadas.
+// Uso: o TestMain do pacote chama Principal. Cada teste chama Postgres ou
+// Redis: o container sobe uma vez por pacote, no primeiro uso, e cada teste
+// recebe um estado só dele (schema no Postgres, prefixo de chave no Redis).
 package integracao
 
 import (
@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -26,18 +27,62 @@ import (
 // ImagemPostgres é a mesma do docker-compose.yml.
 const ImagemPostgres = "postgres:18-alpine"
 
-// urlPostgres é preenchida por Principal; vazia com -short.
-var urlPostgres string
-
-// Principal é o corpo do TestMain de um pacote com testes de integração: sobe
-// o Postgres (a não ser com -short), roda os testes e derruba o container.
-func Principal(m *testing.M) {
-	os.Exit(principal(m))
+// container sobe sob demanda, uma vez por pacote, e é derrubado por Principal.
+type container struct {
+	once  sync.Once
+	url   string
+	err   error
+	ativo testcontainers.Container
 }
 
-func principal(m *testing.M) int {
-	ctx := context.Background()
-	if !curto() {
+var (
+	mu          sync.Mutex
+	encerrar    []testcontainers.Container
+	pgContainer container
+)
+
+func (c *container) subir(subir func(ctx context.Context) (testcontainers.Container, string, error)) (string, error) {
+	c.once.Do(func() {
+		c.ativo, c.url, c.err = subir(context.Background())
+		if c.ativo != nil {
+			mu.Lock()
+			encerrar = append(encerrar, c.ativo)
+			mu.Unlock()
+		}
+	})
+	return c.url, c.err
+}
+
+// Principal é o corpo do TestMain de um pacote com testes de integração: roda
+// os testes e derruba os containers que eles subiram.
+func Principal(m *testing.M) {
+	codigo := m.Run()
+	mu.Lock()
+	for _, c := range encerrar {
+		_ = testcontainers.TerminateContainer(c)
+	}
+	mu.Unlock()
+	os.Exit(codigo)
+}
+
+func pularSeCurto(t *testing.T) {
+	t.Helper()
+	if testing.Short() {
+		t.Skip("teste de integração: pulado com -short")
+	}
+}
+
+// sufixo devolve um identificador aleatório, válido como nome de schema.
+func sufixo() string {
+	return "t_" + strings.ToLower(rand.Text())
+}
+
+// Postgres cria um schema exclusivo do teste, aplica as migrations nele e
+// devolve um pool que só enxerga esse schema. Com -short, pula o teste.
+func Postgres(t *testing.T) *pgxpool.Pool {
+	t.Helper()
+	pularSeCurto(t)
+	url, err := pgContainer.subir(func(ctx context.Context) (testcontainers.Container, string, error) {
 		c, err := postgres.Run(ctx, ImagemPostgres,
 			postgres.WithDatabase("fiapx"),
 			postgres.WithUsername("fiapx"),
@@ -45,44 +90,22 @@ func principal(m *testing.M) int {
 			testcontainers.WithWaitStrategy(wait.ForLog("database system is ready to accept connections").
 				WithOccurrence(2).WithStartupTimeout(60*time.Second)),
 		)
-		defer func() { _ = testcontainers.TerminateContainer(c) }()
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "subir postgres: %v\n", err)
-			return 1
+			return c, "", fmt.Errorf("subir postgres: %w", err)
 		}
-		urlPostgres, err = c.ConnectionString(ctx, "sslmode=disable")
+		url, err := c.ConnectionString(ctx, "sslmode=disable")
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "connection string: %v\n", err)
-			return 1
+			return c, "", fmt.Errorf("url do postgres: %w", err)
 		}
+		return c, url, nil
+	})
+	if err != nil {
+		t.Fatalf("postgres de teste: %v", err)
 	}
-	return m.Run()
-}
 
-// curto lê -short antes de m.Run (testing.Short exige flag.Parse).
-func curto() bool {
-	for _, a := range os.Args[1:] {
-		if a == "-test.short" || a == "-test.short=true" {
-			return true
-		}
-	}
-	return false
-}
-
-// Postgres cria um schema exclusivo do teste, aplica as migrations nele e
-// devolve um pool que só enxerga esse schema. Com -short, pula o teste.
-func Postgres(t *testing.T) *pgxpool.Pool {
-	t.Helper()
-	if testing.Short() {
-		t.Skip("teste de integração: pulado com -short")
-	}
-	if urlPostgres == "" {
-		t.Fatal("Postgres de teste não está no ar: o TestMain do pacote precisa chamar integracao.Principal")
-	}
 	ctx := t.Context()
-	schema := "t_" + strings.ToLower(rand.Text())
-
-	admin, err := banco.Abrir(ctx, urlPostgres)
+	schema := sufixo()
+	admin, err := banco.Abrir(ctx, url)
 	if err != nil {
 		t.Fatalf("abrir pool: %v", err)
 	}
@@ -91,7 +114,7 @@ func Postgres(t *testing.T) *pgxpool.Pool {
 		t.Fatalf("criar schema: %v", err)
 	}
 
-	pool, err := banco.Abrir(ctx, urlPostgres+"&search_path="+schema)
+	pool, err := banco.Abrir(ctx, url+"&search_path="+schema)
 	if err != nil {
 		t.Fatalf("abrir pool do schema: %v", err)
 	}

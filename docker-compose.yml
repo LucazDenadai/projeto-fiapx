@@ -71,6 +71,14 @@ services:
       REDIS_URL: redis://redis:6379/0
       DATA_DIR: /data
       JWT_SECRET: ${JWT_SECRET:?defina JWT_SECRET no .env}
+      # Limite de tentativas (ADR-0009). Vazio: vale o padrão do código
+      LIMITE_LOGIN_EMAIL_MAX: ${LIMITE_LOGIN_EMAIL_MAX:-}
+      LIMITE_LOGIN_EMAIL_JANELA: ${LIMITE_LOGIN_EMAIL_JANELA:-}
+      LIMITE_LOGIN_IP_MAX: ${LIMITE_LOGIN_IP_MAX:-}
+      LIMITE_LOGIN_IP_JANELA: ${LIMITE_LOGIN_IP_JANELA:-}
+      LIMITE_CADASTRO_IP_MAX: ${LIMITE_CADASTRO_IP_MAX:-}
+      LIMITE_CADASTRO_IP_JANELA: ${LIMITE_CADASTRO_IP_JANELA:-}
+      LIMITE_REDIS_TIMEOUT: ${LIMITE_REDIS_TIMEOUT:-}
     volumes:
       - dados:/data
     healthcheck:

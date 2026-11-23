@@ -7,12 +7,16 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"math"
+	"net"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/LucazDenadai/projeto-fiapx/internal/auth"
+	"github.com/LucazDenadai/projeto-fiapx/internal/limite"
 )
 
 // Config reúne as dependências da API.
@@ -20,19 +24,20 @@ type Config struct {
 	Pool       *pgxpool.Pool
 	SegredoJWT []byte
 	Log        *slog.Logger
+	Tentativas *limite.Tentativas
 }
 
 // Novo devolve o roteador público. Falha se a configuração estiver incompleta,
 // por exemplo sem o segredo do JWT.
 func Novo(cfg Config) (http.Handler, error) {
-	if cfg.Pool == nil || cfg.Log == nil {
-		return nil, errors.New("api: Pool e Log são obrigatórios")
+	if cfg.Pool == nil || cfg.Log == nil || cfg.Tentativas == nil {
+		return nil, errors.New("api: Pool, Log e Tentativas são obrigatórios")
 	}
 	servico, err := auth.NovoServico(auth.NovoRepositorio(cfg.Pool), cfg.SegredoJWT)
 	if err != nil {
 		return nil, fmt.Errorf("api: %w", err)
 	}
-	a := &aplicacao{log: cfg.Log, auth: servico}
+	a := &aplicacao{log: cfg.Log, auth: servico, tentativas: cfg.Tentativas}
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /usuarios", a.cadastrar)
 	mux.HandleFunc("POST /login", a.entrar)
@@ -45,8 +50,30 @@ func Novo(cfg Config) (http.Handler, error) {
 }
 
 type aplicacao struct {
-	log  *slog.Logger
-	auth *auth.Servico
+	log        *slog.Logger
+	auth       *auth.Servico
+	tentativas *limite.Tentativas
+}
+
+// ipDoCliente vem só de RemoteAddr: a API é exposta direto, sem proxy, e o
+// X-Forwarded-For seria forjável pelo cliente (ADR-0009).
+func ipDoCliente(r *http.Request) string {
+	ip, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		return r.RemoteAddr
+	}
+	return ip
+}
+
+// responderSeBloqueado responde 429 com Retry-After se b estourou o limite.
+func responderSeBloqueado(w http.ResponseWriter, b limite.Bloqueio) bool {
+	if !b.Bloqueado {
+		return false
+	}
+	segundos := int(math.Ceil(b.Esperar.Seconds()))
+	w.Header().Set("Retry-After", strconv.Itoa(max(segundos, 1)))
+	responderErro(w, http.StatusTooManyRequests, "tentativas demais, tente de novo mais tarde")
+	return true
 }
 
 // tamMaxCorpoJSON limita o corpo de cadastro e login.
@@ -83,6 +110,9 @@ func (a *aplicacao) erroInterno(w http.ResponseWriter, r *http.Request, err erro
 }
 
 func (a *aplicacao) cadastrar(w http.ResponseWriter, r *http.Request) {
+	if responderSeBloqueado(w, a.tentativas.Cadastro(r.Context(), ipDoCliente(r))) {
+		return
+	}
 	var c credenciais
 	if !lerJSON(w, r, &c) {
 		return
@@ -113,9 +143,13 @@ func (a *aplicacao) entrar(w http.ResponseWriter, r *http.Request) {
 	if !lerJSON(w, r, &c) {
 		return
 	}
+	if responderSeBloqueado(w, a.tentativas.Login(r.Context(), c.Email, ipDoCliente(r))) {
+		return
+	}
 	token, expira, err := a.auth.Entrar(r.Context(), c.Email, c.Senha)
 	switch {
 	case err == nil:
+		a.tentativas.LoginComSucesso(r.Context(), c.Email)
 		responderJSON(w, http.StatusOK, tokenEmitido{Token: token, ExpiraEm: expira.UTC()})
 	case errors.Is(err, auth.ErrCredenciaisInvalidas):
 		responderErro(w, http.StatusUnauthorized, auth.ErrCredenciaisInvalidas.Error())
