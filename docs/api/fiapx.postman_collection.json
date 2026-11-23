@@ -1,0 +1,135 @@
+{
+  "info": {
+    "name": "FIAP X — processamento de vídeos",
+    "description": "Interface, documentação e smoke test da API (ADR-0013).\n\nRode em ordem: **Cadastro** gera um e-mail novo a cada execução, e **Login** salva o token na variável de coleção `token`, que as rotas de Vídeo mandam como `Authorization: Bearer` sozinhas.\n\nErros vêm como `{\"erro\": \"mensagem pública\"}`.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{token}}",
+        "type": "string"
+      }
+    ]
+  },
+  "variable": [
+    {
+      "key": "token",
+      "value": ""
+    },
+    {
+      "key": "email",
+      "value": ""
+    }
+  ],
+  "item": [
+    {
+      "name": "Cadastro",
+      "request": {
+        "method": "POST",
+        "auth": {
+          "type": "noauth"
+        },
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{base_url}}/usuarios",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "usuarios"
+          ]
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"email\": \"{{email}}\",\n  \"senha\": \"{{senha}}\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "description": "Cria um Usuário. Sem autenticação.\n\n- `201` criado.\n- `400` e-mail inválido ou senha fora da regra: de 8 a 128 caracteres, com letra maiúscula, letra minúscula, número e caractere especial. A mensagem diz tudo o que falta.\n- `409` e-mail já cadastrado (sem diferença entre maiúsculas e minúsculas)."
+      },
+      "event": [
+        {
+          "listen": "prerequest",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "// E-mail novo a cada execução, para a coleção poder rodar várias vezes.",
+              "pm.collectionVariables.set('email', `usuario.${Date.now()}@exemplo.com`);"
+            ]
+          }
+        },
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('201 Created', () => pm.response.to.have.status(201));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Login",
+      "request": {
+        "method": "POST",
+        "auth": {
+          "type": "noauth"
+        },
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{base_url}}/login",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "login"
+          ]
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"email\": \"{{email}}\",\n  \"senha\": \"{{senha}}\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "description": "Troca e-mail e senha por um JWT HS256 válido por 1h.\n\n- `200` `{\"token\": \"...\", \"expira_em\": \"2026-01-01T12:00:00Z\"}`.\n- `401` `credenciais inválidas`, igual para e-mail inexistente e para senha errada.\n\nO script de teste salva o token na variável de coleção `token`. Expirou: faça login de novo. Qualquer rota de Vídeo sem token, com token expirado ou inválido responde `401`."
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('200 OK', () => pm.response.to.have.status(200));",
+              "const corpo = pm.response.json();",
+              "pm.test('devolve token e expira_em', () => {",
+              "  pm.expect(corpo.token).to.be.a('string').and.not.empty;",
+              "  pm.expect(new Date(corpo.expira_em).getTime()).to.be.above(Date.now());",
+              "});",
+              "pm.collectionVariables.set('token', corpo.token);"
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}
