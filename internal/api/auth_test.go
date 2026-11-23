@@ -156,7 +156,7 @@ func TestNovo_ExigeSegredoDoJWT(t *testing.T) {
 	log := slog.New(slog.DiscardHandler)
 	tentativas := novasTentativas(t, &redis.Options{}, limite.Config{Regras: limite.RegrasPadrao()})
 	for nome, segredo := range map[string][]byte{"ausente": nil, "curto": []byte("curto")} {
-		_, err := api.Novo(api.Config{Pool: pool, SegredoJWT: segredo, Log: log, Tentativas: tentativas})
+		_, err := api.Novo(api.Config{Pool: pool, SegredoJWT: segredo, Log: log, Tentativas: tentativas, DirDados: t.TempDir()})
 		if err == nil {
 			t.Errorf("segredo %s: api.Novo deveria falhar", nome)
 		}

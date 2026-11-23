@@ -26,6 +26,8 @@ type cliente struct {
 	srv *httptest.Server
 	// cabecalhos vão em toda requisição deste cliente.
 	cabecalhos http.Header
+	// dados é o diretório que faz o papel do volume /data.
+	dados string
 }
 
 type resposta struct {
@@ -109,6 +111,7 @@ func subirAPIComRegras(t *testing.T, regras limite.Regras, ajustes ...func(*api.
 		SegredoJWT: []byte(segredoTeste),
 		Log:        log,
 		Tentativas: novasTentativas(t, opcoesRedis, limite.Config{Regras: regras, Prefixo: prefixo}),
+		DirDados:   t.TempDir(),
 	}
 	for _, ajustar := range ajustes {
 		ajustar(&cfg)
@@ -119,7 +122,21 @@ func subirAPIComRegras(t *testing.T, regras limite.Regras, ajustes ...func(*api.
 	}
 	srv := httptest.NewServer(h)
 	t.Cleanup(srv.Close)
-	return cliente{t: t, srv: srv}, pool
+	return cliente{t: t, srv: srv, dados: cfg.DirDados}, pool
+}
+
+// usuario cadastra e faz login, devolvendo o token.
+func (c cliente) usuario(email string) string {
+	c.t.Helper()
+	if r := c.cadastrar(email, "Forte#123"); r.status != http.StatusCreated {
+		c.t.Fatalf("cadastrar %s: status %d", email, r.status)
+	}
+	r := c.entrar(email, "Forte#123")
+	token, _ := r.corpo["token"].(string)
+	if token == "" {
+		c.t.Fatalf("login %s: status %d", email, r.status)
+	}
+	return token
 }
 
 // novasTentativas monta as Tentativas e as fecha no fim do teste.
