@@ -23,6 +23,7 @@ Em `docs/adr/`. Cada um resolve ambiguidades A1–A12 da [matriz](docs/matriz-re
 | [0004](docs/adr/0004-retry-e-dlq.md) | Política de retry e DLQ do Processamento e da notificação | accepted | Retry/DLQ (RF02, RF05) |
 | [0005](docs/adr/0005-volume-arquivos.md) | Volume nomeado do Docker para vídeos e zips | accepted | A4 (RT01, RT02) |
 | [0006](docs/adr/0006-envio-e-download-pela-api.md) | Envio e download dos arquivos pela API, em streaming | accepted | A11 (RF01, RT02) |
+| [0007](docs/adr/0007-autenticacao-jwt-na-api.md) | Cadastro e login por e-mail e senha na própria API, com JWT | accepted | A5 (RF03) |
 
 ### Diagramas
 Ficarão em `docs/diagramas/` (nenhum ainda).
