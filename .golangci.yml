@@ -7,14 +7,8 @@ linters:
     - contextcheck
     - errorlint
     - gosec
-    - misspell
     - noctx
     - unconvert
-  settings:
-    misspell:
-      locale: US
-      ignore-rules:
-        - servico
   exclusions:
     paths:
       - legacy

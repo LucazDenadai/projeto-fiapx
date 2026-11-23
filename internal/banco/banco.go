@@ -26,7 +26,7 @@ func Abrir(ctx context.Context, url string) (*pgxpool.Pool, error) {
 // Migrar aplica as migrations embutidas que faltam. Aplicar de novo é no-op.
 func Migrar(ctx context.Context, pool *pgxpool.Pool) error {
 	db := stdlib.OpenDBFromPool(pool)
-	defer db.Close()
+	defer func() { _ = db.Close() }() // fecha só o *sql.DB; o pool segue com o chamador
 	p, err := goose.NewProvider(goose.DialectPostgres, db, migrations.FS)
 	if err != nil {
 		return fmt.Errorf("preparar migrations: %w", err)

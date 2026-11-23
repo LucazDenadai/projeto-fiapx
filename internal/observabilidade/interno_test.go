@@ -21,7 +21,7 @@ func quebrada(context.Context) error {
 func get(t *testing.T, h http.Handler, caminho string) (int, string) {
 	t.Helper()
 	rec := httptest.NewRecorder()
-	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, caminho, nil))
+	h.ServeHTTP(rec, httptest.NewRequestWithContext(t.Context(), http.MethodGet, caminho, nil))
 	return rec.Code, rec.Body.String()
 }
 

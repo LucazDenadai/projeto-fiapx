@@ -21,7 +21,7 @@ func Sondar(ctx context.Context, url string) error {
 	if err != nil {
 		return fmt.Errorf("sondar %s: %w", url, err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	_, _ = io.Copy(io.Discard, resp.Body)
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("sondar %s: status %d", url, resp.StatusCode)
