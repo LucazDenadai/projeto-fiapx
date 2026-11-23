@@ -25,7 +25,7 @@ Cada requisito do [enunciado](enunciado.md) cruzado com o estado do projeto base
 | RT02 | Arquitetura que permita escalar | Obrigatório | Um processo, disco local, sem separação entre receber e processar; não roda em duas réplicas. | API e worker separados e sem estado local; worker escala horizontalmente por consumidores competindo na fila (`docker compose up --scale worker=N`). | ~~A1~~ [ADR-0001](adr/0001-api-worker-notifier.md), ~~A9~~ [ADR-0011](adr/0011-escala-e-limites.md) |
 | RT03 | Versionado no GitHub | Obrigatório | Não era repositório git. | Repo no GitHub; tickets em GitHub Issues; PRs. | — |
 | RT04 | Testes que garantam qualidade | Obrigatório | Nenhum teste. | TDD (unitários no domínio, integração com Postgres/fila/ffmpeg reais via containers); `go test -race`. | — |
-| RT05 | CI/CD | Obrigatório | Nenhum. | GitHub Actions: lint, testes, build de imagens; CD = publicar imagens em registry. Alvo de deploy a definir. | A10 |
+| RT05 | CI/CD | Obrigatório | Nenhum. | GitHub Actions: lint, testes, build de imagens; CD = publicar imagens no GHCR e deploy efêmero no runner com smoke test. | ~~A10~~ [ADR-0012](adr/0012-ci-cd-github-actions-ghcr.md) |
 
 ## 3. Entregáveis e stack
 
@@ -56,7 +56,7 @@ Resolvidas uma a uma via `/wayfinder` ou `/grill-with-docs`, com aprovação do 
 | A7 | Redis: usar para quê? **Resolvida: [ADR-0009](adr/0009-redis-limite-de-tentativas.md) (só limite de tentativas).** | Cache de status / rate limit / nada (não usar) | RF04, S03 |
 | A8 | Observabilidade **Resolvida: [ADR-0010](adr/0010-observabilidade-prometheus-grafana.md) (Prometheus + Grafana, sem logs centralizados).** | Prometheus + Grafana (métricas de fila e jobs) / + logs centralizados / só logs `slog` | S04, E04 |
 | A9 | Como demonstrar escala e limitar recursos **Resolvida: [ADR-0011](adr/0011-escala-e-limites.md) (escala pelo Worker, limites por camada).** | `--scale worker=N` + concorrência por worker; limites de tamanho/duração do vídeo | RT02, RF01 |
-| A10 | O que é o "CD" num projeto Compose local | Publicar imagens no GHCR / deploy em VM / só build | RT05 |
+| A10 | O que é o "CD" num projeto Compose local **Resolvida: [ADR-0012](adr/0012-ci-cd-github-actions-ghcr.md) (GHCR + deploy efêmero no runner).** | Publicar imagens no GHCR / deploy em VM / só build | RT05 |
 | A11 | Upload: pela API ou direto no storage **Resolvida: [ADR-0006](adr/0006-envio-e-download-pela-api.md) (multipart em streaming pela API).** | Multipart pela API (simples) vs URL pré-assinada direto no storage (API não trafega bytes); a URL pré-assinada saiu com o [ADR-0005](adr/0005-volume-arquivos.md), que não usa object storage | RF01, RT02 |
 | A12 | Frontend | Manter página HTML simples servida pela API vs só API + coleção Postman | E04 |
 

@@ -28,6 +28,7 @@ Em `docs/adr/`. Cada um resolve ambiguidades A1–A12 da [matriz](docs/matriz-re
 | [0009](docs/adr/0009-redis-limite-de-tentativas.md) | Redis só para o limite de tentativas de login e cadastro | accepted | A7 (RF04, S03) |
 | [0010](docs/adr/0010-observabilidade-prometheus-grafana.md) | Observabilidade com Prometheus + Grafana, logs JSON no stdout | accepted | A8 (S04, E04) |
 | [0011](docs/adr/0011-escala-e-limites.md) | Escala pelo Worker e limites que protegem CPU, memória e disco | accepted | A9 (RT02, RF01) |
+| [0012](docs/adr/0012-ci-cd-github-actions-ghcr.md) | CI/CD: GitHub Actions, imagens no GHCR e deploy efêmero no runner | accepted | A10 (RT05) |
 
 ### Diagramas
 Ficarão em `docs/diagramas/` (nenhum ainda).
