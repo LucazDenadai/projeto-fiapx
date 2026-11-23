@@ -57,7 +57,7 @@ Resolvidas uma a uma via `/wayfinder` ou `/grill-with-docs`, com aprovação do 
 | A8 | Observabilidade | Prometheus + Grafana (métricas de fila e jobs) / + logs centralizados / só logs `slog` | S04, E04 |
 | A9 | Como demonstrar escala e limitar recursos | `--scale worker=N` + concorrência por worker; limites de tamanho/duração do vídeo | RT02, RF01 |
 | A10 | O que é o "CD" num projeto Compose local | Publicar imagens no GHCR / deploy em VM / só build | RT05 |
-| A11 | Upload: pela API ou direto no storage | Multipart pela API (simples) vs URL pré-assinada direto no storage (API não trafega bytes); a URL pré-assinada saiu com o [ADR-0005](adr/0005-volume-arquivos.md), que não usa object storage | RF01, RT02 |
+| A11 | Upload: pela API ou direto no storage **Resolvida: [ADR-0006](adr/0006-envio-e-download-pela-api.md) (multipart em streaming pela API).** | Multipart pela API (simples) vs URL pré-assinada direto no storage (API não trafega bytes); a URL pré-assinada saiu com o [ADR-0005](adr/0005-volume-arquivos.md), que não usa object storage | RF01, RT02 |
 | A12 | Frontend | Manter página HTML simples servida pela API vs só API + coleção Postman | E04 |
 
 ## 5. Achados de segurança e qualidade no projeto base
