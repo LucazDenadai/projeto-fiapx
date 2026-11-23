@@ -20,6 +20,10 @@ _Evitar_: conversão, job
 Arquivo compactado com os frames de um Vídeo, que o Usuário baixa.
 _Evitar_: output, resultado, pacote
 
+**Status do Vídeo**:
+Onde o Vídeo está no seu ciclo de vida: **recebido** (aceito, aguardando Processamento), **processando** (frames sendo extraídos), **concluído** (Zip de frames pronto) ou **falhou** (Falha definitiva). Concluído e falhou são finais; o status só anda para a frente.
+_Evitar_: estado do job, fase
+
 **Falha definitiva**:
 Fim de um Processamento sem Zip de frames, com o Vídeo marcado como falho e o Usuário notificado. Não há nova tentativa automática.
 _Evitar_: erro, crash
