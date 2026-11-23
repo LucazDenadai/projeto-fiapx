@@ -25,6 +25,7 @@ Em `docs/adr/`. Cada um resolve ambiguidades A1–A12 da [matriz](docs/matriz-re
 | [0006](docs/adr/0006-envio-e-download-pela-api.md) | Envio e download dos arquivos pela API, em streaming | accepted | A11 (RF01, RT02) |
 | [0007](docs/adr/0007-autenticacao-jwt-na-api.md) | Cadastro e login por e-mail e senha na própria API, com JWT | accepted | A5 (RF03) |
 | [0008](docs/adr/0008-notificacao-por-email.md) | Notificação de Falha definitiva por e-mail (SMTP, Mailpit no Compose) | accepted | A6 (RF05) |
+| [0009](docs/adr/0009-redis-limite-de-tentativas.md) | Redis só para o limite de tentativas de login e cadastro | accepted | A7 (RF04, S03) |
 
 ### Diagramas
 Ficarão em `docs/diagramas/` (nenhum ainda).

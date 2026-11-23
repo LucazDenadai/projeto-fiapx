@@ -14,7 +14,7 @@ Cada requisito do [enunciado](enunciado.md) cruzado com o estado do projeto base
 | RF01 | Processar mais de um vídeo ao mesmo tempo | Obrigatório | Processamento síncrono dentro do request: `handleVideoUpload` chama `processVideo` direto (`main.go:117`). Um vídeo longo segura a conexão HTTP; concorrência só existe por acaso (goroutines do Gin), sem limite nem controle. | Upload só registra o Vídeo e enfileira um Job; workers consomem a fila em paralelo, com concorrência configurável por worker. | ~~A1~~ [ADR-0001](adr/0001-api-worker-notifier.md), ~~A2~~ [ADR-0002](adr/0002-rabbitmq-mensageria.md) |
 | RF02 | Em picos, não perder requisição | Obrigatório | Sem fila nem estado persistido: se o processo cai durante o ffmpeg, o vídeo e o pedido se perdem (`uploads/` local, sem registro). | Fila durável com ack manual após conclusão; mensagem persistente; retry com DLQ; garantia de consistência entre "gravar Vídeo" e "publicar Job". | ~~A2~~ [ADR-0002](adr/0002-rabbitmq-mensageria.md), ~~A3~~ [ADR-0003](adr/0003-transactional-outbox.md), [ADR-0004](adr/0004-retry-e-dlq.md) |
 | RF03 | Protegido por usuário e senha | Obrigatório | Nenhuma autenticação; CORS `*` (`main.go:36`). | Cadastro/login com senha em hash forte; todas as rotas de vídeo exigem identidade. | ~~A5~~ [ADR-0007](adr/0007-autenticacao-jwt-na-api.md) |
-| RF04 | Listagem de status dos vídeos de um usuário | Obrigatório | `/api/status` lista os zips de **todos** pelo filesystem (`main.go:254`); não existe "status" (só arquivos prontos), nem dono. | Vídeo persistido com dono e ciclo de status (ex.: recebido → processando → concluído / falhou); endpoint filtra pelo usuário autenticado. | ~~A1~~ [ADR-0001](adr/0001-api-worker-notifier.md), A7 |
+| RF04 | Listagem de status dos vídeos de um usuário | Obrigatório | `/api/status` lista os zips de **todos** pelo filesystem (`main.go:254`); não existe "status" (só arquivos prontos), nem dono. | Vídeo persistido com dono e ciclo de status (ex.: recebido → processando → concluído / falhou); endpoint filtra pelo usuário autenticado. | ~~A1~~ [ADR-0001](adr/0001-api-worker-notifier.md), ~~A7~~ [ADR-0009](adr/0009-redis-limite-de-tentativas.md) |
 | RF05 | Em caso de erro, usuário pode ser notificado (e-mail ou outro) | Obrigatório (o "pode" se refere ao meio) | Não há notificação; o erro bruto do ffmpeg vaza na resposta (`main.go:146`). | Evento de falha publicado quando o Job esgota tentativas; consumidor de notificação envia e-mail; mensagem ao usuário sem detalhe interno. | [ADR-0004](adr/0004-retry-e-dlq.md) (retry, motivo público), ~~A6~~ [ADR-0008](adr/0008-notificacao-por-email.md) |
 
 ## 2. Requisitos técnicos
@@ -37,7 +37,7 @@ Cada requisito do [enunciado](enunciado.md) cruzado com o estado do projeto base
 | E04 | Vídeo de até 10 min (docs, arquitetura, projeto funcionando) | Obrigatório | Roteiro no fim; mostrar escala e "não perder requisição" ao vivo. |
 | S01 | Docker + Kubernetes **ou** Compose | Recomendado | **Decidido: Docker + Compose**, partindo do Dockerfile do enunciado refeito com boas práticas (ver seção 5). |
 | S02 | RabbitMQ, Kafka ou similar | Recomendado | **Decidido: RabbitMQ** ([ADR-0002](adr/0002-rabbitmq-mensageria.md)). |
-| S03 | PostgreSQL + Redis (cache) | Recomendado | Postgres praticamente certo; Redis só com uso real (A7). |
+| S03 | PostgreSQL + Redis (cache) | Recomendado | Postgres; Redis só para o limite de tentativas de login e cadastro, sem cache ([ADR-0009](adr/0009-redis-limite-de-tentativas.md)). |
 | S04 | Prometheus + Grafana, ELK… | Recomendado | A8. |
 | S05 | GitHub Actions | Recomendado | Adotado (RT05). |
 
@@ -53,7 +53,7 @@ Resolvidas uma a uma via `/wayfinder` ou `/grill-with-docs`, com aprovação do 
 | A4 | Onde ficam vídeo e zip **Resolvida: [ADR-0005](adr/0005-volume-arquivos.md) (volume nomeado).** | MinIO (S3-compatível, escala, URL pré-assinada) vs volume compartilhado | RT01, RT02 |
 | A5 | Autenticação **Resolvida: [ADR-0007](adr/0007-autenticacao-jwt-na-api.md) (e-mail + senha na API, JWT).** | JWT emitido pela própria API (bcrypt/argon2 + Postgres) vs IdP (Keycloak) | RF03 |
 | A6 | Meio de notificação **Resolvida: [ADR-0008](adr/0008-notificacao-por-email.md) (e-mail SMTP, Mailpit).** | E-mail via SMTP de desenvolvimento (Mailpit) vs webhook vs outro | RF05 |
-| A7 | Redis: usar para quê? | Cache de status / rate limit / nada (não usar) | RF04, S03 |
+| A7 | Redis: usar para quê? **Resolvida: [ADR-0009](adr/0009-redis-limite-de-tentativas.md) (só limite de tentativas).** | Cache de status / rate limit / nada (não usar) | RF04, S03 |
 | A8 | Observabilidade | Prometheus + Grafana (métricas de fila e jobs) / + logs centralizados / só logs `slog` | S04, E04 |
 | A9 | Como demonstrar escala e limitar recursos | `--scale worker=N` + concorrência por worker; limites de tamanho/duração do vídeo | RT02, RF01 |
 | A10 | O que é o "CD" num projeto Compose local | Publicar imagens no GHCR / deploy em VM / só build | RT05 |
