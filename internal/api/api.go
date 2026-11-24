@@ -74,6 +74,7 @@ func Novo(cfg Config) (http.Handler, error) {
 	rotasVideo.HandleFunc("POST /videos", a.enviar)
 	rotasVideo.HandleFunc("GET /videos", a.listar)
 	rotasVideo.HandleFunc("GET /videos/{id}", a.consultar)
+	rotasVideo.HandleFunc("GET /videos/{id}/zip", a.baixar)
 	protegidas := servico.Exigir(rotasVideo)
 	mux.Handle("/videos", protegidas)
 	mux.Handle("/videos/", protegidas)
