@@ -230,15 +230,26 @@ func (a *aplicacao) listar(w http.ResponseWriter, r *http.Request) {
 	responderJSON(w, http.StatusOK, resp)
 }
 
-func (a *aplicacao) consultar(w http.ResponseWriter, r *http.Request) {
-	usuarioID, ok := usuarioDe(r)
+// videoDaRota lê o Usuário do token e o id do Vídeo da rota. Responde e
+// devolve false se faltar um deles: id malformado dá o mesmo 404 do Vídeo
+// inexistente.
+func videoDaRota(w http.ResponseWriter, r *http.Request) (usuarioID, id uuid.UUID, ok bool) {
+	usuarioID, ok = usuarioDe(r)
 	if !ok {
 		responderErro(w, http.StatusUnauthorized, "token inválido")
-		return
+		return usuarioID, id, false
 	}
 	id, err := uuid.Parse(r.PathValue("id"))
 	if err != nil {
 		responderErro(w, http.StatusNotFound, videos.ErrNaoEncontrado.Error())
+		return usuarioID, id, false
+	}
+	return usuarioID, id, true
+}
+
+func (a *aplicacao) consultar(w http.ResponseWriter, r *http.Request) {
+	usuarioID, id, ok := videoDaRota(w, r)
+	if !ok {
 		return
 	}
 	v, err := a.videos.Buscar(r.Context(), usuarioID, id)
@@ -256,22 +267,16 @@ func (a *aplicacao) consultar(w http.ResponseWriter, r *http.Request) {
 // baixar serve o Zip de frames com ServeContent: Range (download retomável),
 // If-Modified-Since e HEAD saem de graça (ADR-0006).
 func (a *aplicacao) baixar(w http.ResponseWriter, r *http.Request) {
-	usuarioID, ok := usuarioDe(r)
+	usuarioID, id, ok := videoDaRota(w, r)
 	if !ok {
-		responderErro(w, http.StatusUnauthorized, "token inválido")
-		return
-	}
-	id, err := uuid.Parse(r.PathValue("id"))
-	if err != nil {
-		responderErro(w, http.StatusNotFound, videos.ErrNaoEncontrado.Error())
 		return
 	}
 	zip, err := a.videos.AbrirZip(r.Context(), usuarioID, id, time.Now())
-	if naoConcluido, ok := errors.AsType[*videos.ErroNaoConcluido](err); ok {
+	var naoConcluido *videos.ErroNaoConcluido
+	switch {
+	case errors.As(err, &naoConcluido):
 		responderNaoConcluido(w, naoConcluido)
 		return
-	}
-	switch {
 	case errors.Is(err, videos.ErrNaoEncontrado):
 		responderErro(w, http.StatusNotFound, videos.ErrNaoEncontrado.Error())
 		return

@@ -92,6 +92,10 @@ func TestDownload_ZipPronto(t *testing.T) {
 	if v := c.fazer(http.MethodGet, "/videos/"+id, ana, nil); v.corpo["download"] != "/videos/"+id+"/zip" {
 		t.Errorf("consulta sem o link de download: %v", v.corpo)
 	}
+	lista := c.fazer(http.MethodGet, "/videos", ana, nil)
+	if itens, _ := lista.corpo["videos"].([]any); len(itens) != 1 || itens[0].(map[string]any)["download"] != "/videos/"+id+"/zip" {
+		t.Errorf("listagem sem o link de download: %v", lista.corpo)
+	}
 }
 
 func TestDownload_RetomadoComRange(t *testing.T) {
