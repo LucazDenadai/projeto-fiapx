@@ -323,3 +323,31 @@ func TestConsulta_VideoAlheioDa404IgualAInexistente(t *testing.T) {
 		}
 	}
 }
+
+// Vídeo com Falha definitiva: a listagem e a consulta mostram só o código e o
+// texto fixo do Motivo da falha (ADR-0004, ADR-0014).
+func TestListagem_FalhouMostraSoCodigoETextoDoMotivo(t *testing.T) {
+	c, pool := subirAPI(t)
+	ana := c.usuario("ana@ex.com")
+	id := c.enviarVideo(ana, "ferias.mp4")
+	if _, err := pool.Exec(t.Context(), `UPDATE videos SET status = 'falhou', motivo = 'video_invalido' WHERE id = $1`, id); err != nil {
+		t.Fatal(err)
+	}
+
+	v := c.fazer(http.MethodGet, "/videos/"+id, ana, nil)
+	lista := c.fazer(http.MethodGet, "/videos", ana, nil)
+	itens, _ := lista.corpo["videos"].([]any)
+	if len(itens) != 1 {
+		t.Fatalf("listagem com %d itens, quero 1", len(itens))
+	}
+	for origem, corpo := range map[string]map[string]any{"consulta": v.corpo, "listagem": itens[0].(map[string]any)} {
+		if corpo["status"] != "falhou" || corpo["motivo"] != "video_invalido" ||
+			corpo["motivo_texto"] != "o arquivo não pôde ser lido como vídeo" {
+			t.Errorf("%s: %v", origem, corpo)
+		}
+		quero := []string{"id", "nome_original", "status", "criado_em", "atualizado_em", "motivo", "motivo_texto"}
+		if len(corpo) != len(quero) {
+			t.Errorf("%s: campos %v, quero só %v", origem, corpo, quero)
+		}
+	}
+}

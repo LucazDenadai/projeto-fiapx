@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"testing"
 	"time"
@@ -84,21 +85,50 @@ func TestExtrairFrames_TimeoutMataOFFmpeg(t *testing.T) {
 
 	inicio := time.Now()
 	_, err := extracao.Novo(extracao.Config{Timeout: time.Nanosecond}).ExtrairFrames(t.Context(), video, t.TempDir())
-	if !errors.Is(err, context.DeadlineExceeded) {
-		t.Fatalf("erro = %v, quero context.DeadlineExceeded", err)
+	if !errors.Is(err, context.DeadlineExceeded) || errors.Is(err, extracao.ErrVideoInvalido) {
+		t.Fatalf("erro = %v, quero context.DeadlineExceeded (e não ErrVideoInvalido)", err)
 	}
 	if d := time.Since(inicio); d > 5*time.Second {
 		t.Errorf("demorou %v para desistir", d)
 	}
 }
 
-func TestExtrairFrames_ArquivoQueNaoEhVideoDaErro(t *testing.T) {
+// Arquivo que o ffprobe ou o ffmpeg não conseguem ler é problema do vídeo
+// (Falha definitiva), não de infraestrutura.
+func TestSondarEExtrair_ArquivoQueNaoEhVideoEhInvalido(t *testing.T) {
 	integracao.ExigirFFmpeg(t)
 	lixo := filepath.Join(t.TempDir(), "original")
 	if err := os.WriteFile(lixo, []byte("isto não é um vídeo"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := extracao.Novo(extracao.Config{}).ExtrairFrames(t.Context(), lixo, t.TempDir()); err == nil {
-		t.Fatal("extrair de um arquivo qualquer deveria falhar")
+	ext := extracao.Novo(extracao.Config{})
+	if _, err := ext.Sondar(t.Context(), lixo); !errors.Is(err, extracao.ErrVideoInvalido) {
+		t.Errorf("sondar: erro = %v, quero ErrVideoInvalido", err)
+	}
+	if _, err := ext.ExtrairFrames(t.Context(), lixo, t.TempDir()); !errors.Is(err, extracao.ErrVideoInvalido) {
+		t.Errorf("extrair: erro = %v, quero ErrVideoInvalido", err)
+	}
+}
+
+func TestSondar_SemStreamDeVideoEhInvalido(t *testing.T) {
+	integracao.ExigirFFmpeg(t)
+	audio := filepath.Join(t.TempDir(), "audio.mkv")
+	cmd := exec.CommandContext(t.Context(), "ffmpeg", "-nostdin", "-v", "error", //nolint:gosec // argumentos do teste
+		"-f", "lavfi", "-i", "sine=duration=1", audio)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("gerar áudio: %v: %s", err, out)
+	}
+	_, err := extracao.Novo(extracao.Config{}).Sondar(t.Context(), audio)
+	if !errors.Is(err, extracao.ErrSemVideo) || !errors.Is(err, extracao.ErrVideoInvalido) {
+		t.Errorf("erro = %v, quero ErrSemVideo, que é ErrVideoInvalido", err)
+	}
+}
+
+// Original sumido é problema do volume: o Processamento tenta de novo.
+func TestSondar_ArquivoAusenteNaoEhInvalido(t *testing.T) {
+	integracao.ExigirFFmpeg(t)
+	_, err := extracao.Novo(extracao.Config{}).Sondar(t.Context(), filepath.Join(t.TempDir(), "sumiu"))
+	if err == nil || errors.Is(err, extracao.ErrVideoInvalido) {
+		t.Errorf("erro = %v, quero erro que não seja ErrVideoInvalido", err)
 	}
 }

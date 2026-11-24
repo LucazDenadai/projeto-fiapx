@@ -68,12 +68,23 @@ type Sonda struct {
 	Duracao time.Duration
 }
 
-// ErrSemVideo: o arquivo abre, mas não tem stream de vídeo.
-var ErrSemVideo = errors.New("arquivo sem stream de vídeo")
+// ErrVideoInvalido: o ffprobe ou o ffmpeg não conseguem ler o arquivo como
+// vídeo (formato fora da lista, corrompido, sem stream de vídeo). É problema
+// do arquivo: tentar de novo dá o mesmo resultado (ADR-0004).
+var ErrVideoInvalido = errors.New("arquivo ilegível como vídeo")
+
+// ErrSemVideo: o arquivo abre, mas não tem stream de vídeo. É um
+// ErrVideoInvalido.
+var ErrSemVideo = fmt.Errorf("%w: sem stream de vídeo", ErrVideoInvalido)
 
 // Sondar lê a duração do arquivo com o ffprobe e confere que ele tem um stream
 // de vídeo.
 func (e *Extrator) Sondar(ctx context.Context, arquivo string) (Sonda, error) {
+	// O ffprobe também sai com erro se o arquivo não existe; isso é problema
+	// do volume, não do vídeo, e não pode virar ErrVideoInvalido.
+	if _, err := os.Stat(arquivo); err != nil {
+		return Sonda{}, fmt.Errorf("original: %w", err)
+	}
 	args := append([]string{"-v", "error"}, entradaRestrita...)
 	args = append(args,
 		"-select_streams", "v:0",
@@ -99,9 +110,10 @@ func (e *Extrator) Sondar(ctx context.Context, arquivo string) (Sonda, error) {
 	if len(r.Streams) == 0 {
 		return Sonda{}, ErrSemVideo
 	}
+	// Sem duração legível não dá para conferir a duração máxima (ADR-0011).
 	segundos, err := strconv.ParseFloat(r.Format.Duration, 64)
-	if err != nil {
-		return Sonda{}, fmt.Errorf("duração %q do ffprobe: %w", r.Format.Duration, err)
+	if err != nil || segundos < 0 {
+		return Sonda{}, fmt.Errorf("%w: duração %q no ffprobe", ErrVideoInvalido, r.Format.Duration)
 	}
 	return Sonda{Duracao: time.Duration(segundos * float64(time.Second))}, nil
 }
@@ -141,7 +153,10 @@ func (e *Extrator) ExtrairFrames(ctx context.Context, arquivo, dir string) ([]st
 const tamMaxErro = 4 << 10
 
 // rodar executa o binário com o timeout do Extrator e devolve o stdout. Se o
-// prazo estourar, o erro embrulha context.DeadlineExceeded.
+// prazo estourar, o erro embrulha context.DeadlineExceeded. Se o processo
+// terminar por conta própria com código de erro, embrulha ErrVideoInvalido:
+// os argumentos são fixos, então quem falhou foi a leitura do arquivo. Morto
+// por sinal (OOM, kill) não conta, porque não diz nada do vídeo.
 func (e *Extrator) rodar(ctx context.Context, bin string, args ...string) ([]byte, error) {
 	ctx, cancel := context.WithTimeout(ctx, e.cfg.Timeout)
 	defer cancel()
@@ -156,7 +171,11 @@ func (e *Extrator) rodar(ctx context.Context, bin string, args ...string) ([]byt
 		if ctx.Err() != nil {
 			return nil, fmt.Errorf("%w (%w)", ctx.Err(), err)
 		}
-		return nil, fmt.Errorf("%w: %s", err, strings.TrimSpace(stderr.String()))
+		detalhe := strings.TrimSpace(stderr.String())
+		if saida, ok := errors.AsType[*exec.ExitError](err); ok && saida.ExitCode() > 0 {
+			return nil, fmt.Errorf("%w (%w): %s", ErrVideoInvalido, err, detalhe)
+		}
+		return nil, fmt.Errorf("%w: %s", err, detalhe)
 	}
 	return []byte(stdout.String()), nil
 }
