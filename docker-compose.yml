@@ -83,6 +83,8 @@ services:
       ENVIO_TAMANHO_MAX_MB: ${ENVIO_TAMANHO_MAX_MB:-}
       ENVIO_TIMEOUT: ${ENVIO_TIMEOUT:-}
       COTA_VIDEOS: ${COTA_VIDEOS:-}
+      # Polling da outbox (ADR-0003). Vazio: 1 s
+      OUTBOX_INTERVALO: ${OUTBOX_INTERVALO:-}
     volumes:
       - dados:/data
     healthcheck:
@@ -107,6 +109,7 @@ services:
       DATABASE_URL: *postgres-url
       RABBITMQ_URL: *rabbitmq-url
       DATA_DIR: /data
+      OUTBOX_INTERVALO: ${OUTBOX_INTERVALO:-}
     volumes:
       - dados:/data
     healthcheck:
