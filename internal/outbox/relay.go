@@ -132,8 +132,9 @@ type linha struct {
 
 // Rodada publica um lote de linhas pendentes e devolve quantas publicou. Uma
 // linha recusada pelo broker (sem rota ou nack) é pulada, para não travar as
-// outras (não há garantia de ordem); falha de conexão para o lote. Em ambos os
-// casos o que já foi confirmado recebe publicado_em e o resto fica pendente.
+// outras (não há garantia de ordem); a exceção é o evento sem assinante, que
+// conta como publicado. Falha de conexão para o lote. Em ambos os casos o que
+// já foi confirmado recebe publicado_em e o resto fica pendente.
 func (r *Relay) Rodada(ctx context.Context) (int, error) {
 	if err := r.pub.Conectar(ctx); err != nil {
 		return 0, err
@@ -160,7 +161,7 @@ func (r *Relay) Rodada(ctx context.Context) (int, error) {
 		var ids []int64
 		for _, l := range lote {
 			err := r.publicar(ctx, l)
-			if err == nil {
+			if err == nil || eventoSemAssinante(l, err) {
 				ids = append(ids, l.id)
 				continue
 			}
@@ -183,6 +184,13 @@ func (r *Relay) Rodada(ctx context.Context) (int, error) {
 		return 0, err
 	}
 	return publicadas, falha
+}
+
+// eventoSemAssinante: na exchange de eventos, assinar é opcional (ADR-0002);
+// um evento sem fila ligada à routing key dele foi entregue a todos os
+// interessados, que são nenhum. Já um Job sem rota é erro: ninguém o processa.
+func eventoSemAssinante(l linha, err error) bool {
+	return l.exchange == mensageria.ExchangeEventos && errors.Is(err, mensageria.ErrSemRota)
 }
 
 func (r *Relay) publicar(ctx context.Context, l linha) error {

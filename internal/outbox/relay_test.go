@@ -223,3 +223,22 @@ func TestRelay_LinhaSemRotaNaoTravaAsOutras(t *testing.T) {
 		t.Errorf("mensagens = %d, quero 2", len(msgs))
 	}
 }
+
+// Evento é fan-out: assinar é opcional (ADR-0002). Sem fila ligada à routing
+// key (hoje, concluido), o evento conta como publicado e não volta toda rodada.
+func TestRelay_EventoSemAssinanteContaComoPublicado(t *testing.T) {
+	pool, url := integracao.Postgres(t), integracao.RabbitMQ(t)
+	if _, err := pool.Exec(t.Context(),
+		`INSERT INTO outbox (exchange, routing_key, payload) VALUES ($1, 'concluido', '{}')`,
+		mensageria.ExchangeEventos); err != nil {
+		t.Fatalf("inserir: %v", err)
+	}
+
+	n, err := novoRelay(t, pool, url).Rodada(t.Context())
+	if err != nil {
+		t.Fatalf("rodada: %v", err)
+	}
+	if n != 1 || pendentes(t, pool) != 0 {
+		t.Errorf("publicadas = %d, pendentes = %d; quero 1 e 0", n, pendentes(t, pool))
+	}
+}
