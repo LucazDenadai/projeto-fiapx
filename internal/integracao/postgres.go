@@ -81,6 +81,14 @@ func sufixo() string {
 // devolve um pool que só enxerga esse schema. Com -short, pula o teste.
 func Postgres(t *testing.T) *pgxpool.Pool {
 	t.Helper()
+	pool, _ := PostgresComURL(t)
+	return pool
+}
+
+// PostgresComURL é o Postgres e devolve também a URL do schema, por exemplo
+// para abrir outro pool por um Proxy.
+func PostgresComURL(t *testing.T) (*pgxpool.Pool, string) {
+	t.Helper()
 	pularSeCurto(t)
 	url, err := pgContainer.subir(func(ctx context.Context) (testcontainers.Container, string, error) {
 		c, err := postgres.Run(ctx, ImagemPostgres,
@@ -114,7 +122,8 @@ func Postgres(t *testing.T) *pgxpool.Pool {
 		t.Fatalf("criar schema: %v", err)
 	}
 
-	pool, err := banco.Abrir(ctx, url+"&search_path="+schema)
+	urlSchema := url + "&search_path=" + schema
+	pool, err := banco.Abrir(ctx, urlSchema)
 	if err != nil {
 		t.Fatalf("abrir pool do schema: %v", err)
 	}
@@ -122,5 +131,5 @@ func Postgres(t *testing.T) *pgxpool.Pool {
 	if err := banco.Migrar(ctx, pool); err != nil {
 		t.Fatalf("migrar: %v", err)
 	}
-	return pool
+	return pool, urlSchema
 }

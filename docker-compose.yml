@@ -85,6 +85,8 @@ services:
       COTA_VIDEOS: ${COTA_VIDEOS:-}
       # Polling da outbox (ADR-0003). Vazio: 1 s
       OUTBOX_INTERVALO: ${OUTBOX_INTERVALO:-}
+      # Mesmo valor no Worker (ADR-0004). Vazio: 5
+      DELIVERY_LIMIT: ${DELIVERY_LIMIT:-}
     volumes:
       - dados:/data
     healthcheck:
@@ -110,6 +112,10 @@ services:
       RABBITMQ_URL: *rabbitmq-url
       DATA_DIR: /data
       OUTBOX_INTERVALO: ${OUTBOX_INTERVALO:-}
+      DELIVERY_LIMIT: ${DELIVERY_LIMIT:-}
+      # Retry e DLQ (ADR-0004). Vazio: 1 s e 1 min
+      RETRY_BACKOFF_INICIAL: ${RETRY_BACKOFF_INICIAL:-}
+      RETRY_ORCAMENTO: ${RETRY_ORCAMENTO:-}
       # Processamento (ADR-0011, ADR-0015). Vazio: 1, 10 min, 10 min e 7 dias
       WORKER_PREFETCH: ${WORKER_PREFETCH:-}
       FFMPEG_TIMEOUT: ${FFMPEG_TIMEOUT:-}

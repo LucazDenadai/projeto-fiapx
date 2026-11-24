@@ -28,6 +28,14 @@ import (
 // de concluído (ADR-0015).
 const RetencaoZipPadrao = 7 * 24 * time.Hour
 
+// Retry das operações de infraestrutura dentro do Worker (ADR-0004): 1, 2,
+// 4, 8, 16 s… até o orçamento. Somado ao timeout do ffmpeg, tem de ficar
+// abaixo do consumer_timeout do RabbitMQ (30 min).
+const (
+	BackoffInicialPadrao = time.Second
+	OrcamentoRetryPadrao = time.Minute
+)
+
 // DuracaoMaximaPadrao é a maior duração de Vídeo que o Worker extrai: até 600
 // frames (ADR-0011).
 const DuracaoMaximaPadrao = 10 * time.Minute
@@ -57,6 +65,11 @@ type Config struct {
 	// DuracaoMaxima acima da qual o Vídeo falha com video_muito_longo, sem
 	// extrair (ADR-0011); padrão DuracaoMaximaPadrao.
 	DuracaoMaxima time.Duration
+	// BackoffInicial e OrcamentoRetry regem a nova tentativa de cada operação
+	// de infraestrutura (Postgres, volume); padrão BackoffInicialPadrao e
+	// OrcamentoRetryPadrao. Esgotado o orçamento, a mensagem volta à fila.
+	BackoffInicial time.Duration
+	OrcamentoRetry time.Duration
 }
 
 // Processador trata as mensagens da fila processamento.
@@ -78,6 +91,12 @@ func NovoProcessador(pool *pgxpool.Pool, arqs Armazenamento, ext Extrator, cfg C
 	}
 	if cfg.DuracaoMaxima <= 0 {
 		cfg.DuracaoMaxima = DuracaoMaximaPadrao
+	}
+	if cfg.BackoffInicial <= 0 {
+		cfg.BackoffInicial = BackoffInicialPadrao
+	}
+	if cfg.OrcamentoRetry <= 0 {
+		cfg.OrcamentoRetry = OrcamentoRetryPadrao
 	}
 	return &Processador{repo: repositorio{pool: pool}, arqs: arqs, ext: ext, cfg: cfg, log: log}
 }
@@ -116,19 +135,12 @@ type mensagem struct {
 // aponta para Vídeo nenhum. Qualquer outro erro conta como transitório
 // (ADR-0004): devolve a mensagem para a fila, e a reentrega refaz tudo do zero.
 func (p *Processador) Processar(ctx context.Context, corpo []byte) mensageria.Resultado {
-	var msg mensagem
-	if err := json.Unmarshal(corpo, &msg); err != nil {
-		p.log.ErrorContext(ctx, "mensagem de processamento ilegível; descartada", "erro", err)
+	id, correlationID, log, ok := p.lerMensagem(ctx, corpo)
+	if !ok {
 		return mensageria.Confirmar
 	}
-	id, err := uuid.Parse(msg.VideoID)
-	if err != nil {
-		p.log.ErrorContext(ctx, "mensagem de processamento sem video_id válido; descartada", "correlation_id", msg.CorrelationID)
-		return mensageria.Confirmar
-	}
-	log := p.log.With("video_id", id, "correlation_id", msg.CorrelationID)
 
-	err = p.repo.iniciar(ctx, id)
+	err := tentarSo(ctx, p.cfg, log, "iniciar", func() error { return p.repo.iniciar(ctx, id) })
 	switch {
 	case errors.Is(err, errNaoEncontrado):
 		log.ErrorContext(ctx, "vídeo inexistente; mensagem descartada")
@@ -142,9 +154,9 @@ func (p *Processador) Processar(ctx context.Context, corpo []byte) mensageria.Re
 	}
 
 	inicio := time.Now()
-	err = p.processar(ctx, id, msg.CorrelationID, log)
+	err = p.processar(ctx, id, correlationID, log)
 	if perm, ok := errors.AsType[*falhaPermanente](err); ok {
-		return p.falhar(ctx, id, msg.CorrelationID, perm, log)
+		return p.falhar(ctx, id, correlationID, perm, log)
 	}
 	if err != nil {
 		log.WarnContext(ctx, "processamento interrompido; mensagem devolvida", "erro", err)
@@ -152,6 +164,82 @@ func (p *Processador) Processar(ctx context.Context, corpo []byte) mensageria.Re
 	}
 	log.InfoContext(ctx, "vídeo concluído", "duracao", time.Since(inicio).Round(time.Millisecond).String())
 	return mensageria.Confirmar
+}
+
+// ProcessarDLQ é o mensageria.Tratador da processamento.dlq: a mensagem chega
+// aqui quando esgotou as entregas na fila processamento, inclusive por um
+// Vídeo que derruba o Worker. Registra a Falha definitiva com erro_interno e
+// o evento falhou; se o Vídeo já é terminal (outra cópia terminou), só
+// confirma, sem evento (ADR-0004). A DLQ não tem delivery-limit: enquanto o
+// registro não sai, a mensagem volta para ela.
+func (p *Processador) ProcessarDLQ(ctx context.Context, corpo []byte) mensageria.Resultado {
+	id, correlationID, log, ok := p.lerMensagem(ctx, corpo)
+	if !ok {
+		return mensageria.Confirmar
+	}
+	falhou, err := tentar(ctx, p.cfg, log, "registrar falha", func() (bool, error) {
+		return p.repo.falhar(ctx, id, correlationID, videos.MotivoErroInterno)
+	})
+	if err != nil {
+		log.WarnContext(ctx, "dlq: não deu para registrar a falha; mensagem devolvida", "erro", err)
+		return mensageria.Devolver
+	}
+	if !falhou {
+		log.InfoContext(ctx, "dlq: vídeo já terminal ou inexistente; confirmada sem evento")
+		return mensageria.Confirmar
+	}
+	log.ErrorContext(ctx, "falha definitiva: tentativas esgotadas", "motivo", videos.MotivoErroInterno)
+	p.apagarOriginal(ctx, id, log)
+	return mensageria.Confirmar
+}
+
+// lerMensagem decodifica o pedido de Processamento. Mensagem ilegível ou sem
+// video_id válido não tem como dar certo: ok false, e quem chama descarta.
+func (p *Processador) lerMensagem(ctx context.Context, corpo []byte) (id uuid.UUID, correlationID string, log *slog.Logger, ok bool) {
+	var msg mensagem
+	if err := json.Unmarshal(corpo, &msg); err != nil {
+		p.log.ErrorContext(ctx, "mensagem de processamento ilegível; descartada", "erro", err)
+		return id, "", nil, false
+	}
+	id, err := uuid.Parse(msg.VideoID)
+	if err != nil {
+		p.log.ErrorContext(ctx, "mensagem de processamento sem video_id válido; descartada", "correlation_id", msg.CorrelationID)
+		return id, "", nil, false
+	}
+	return id, msg.CorrelationID, p.log.With("video_id", id, "correlation_id", msg.CorrelationID), true
+}
+
+// tentar repete op enquanto o erro for transitório, com backoff exponencial a
+// partir de cfg.BackoffInicial, até a próxima espera passar do orçamento
+// (ADR-0004). Devolve o último resultado.
+func tentar[T any](ctx context.Context, cfg Config, log *slog.Logger, operacao string, op func() (T, error)) (T, error) {
+	limite := time.Now().Add(cfg.OrcamentoRetry)
+	espera := cfg.BackoffInicial
+	for {
+		v, err := op()
+		if err == nil || !transitorio(ctx, err) || time.Now().Add(espera).After(limite) {
+			return v, err
+		}
+		log.WarnContext(ctx, "infraestrutura falhou; tentando de novo", "operacao", operacao, "espera", espera.String(), "erro", err)
+		select {
+		case <-ctx.Done():
+			return v, err
+		case <-time.After(espera):
+		}
+		espera *= 2
+	}
+}
+
+// tentarSo é tentar para operações sem resultado.
+func tentarSo(ctx context.Context, cfg Config, log *slog.Logger, operacao string, op func() error) error {
+	_, err := tentar(ctx, cfg, log, operacao, func() (struct{}, error) { return struct{}{}, op() })
+	return err
+}
+
+// transitorio diz se vale tentar de novo: não com o Worker parando, nem com
+// as respostas definitivas do repositório.
+func transitorio(ctx context.Context, err error) bool {
+	return ctx.Err() == nil && !errors.Is(err, errNaoEncontrado) && !errors.Is(err, errTerminal)
 }
 
 // falhaPermanente é um erro permanente do ADR-0004, do próprio vídeo: tentar
@@ -169,7 +257,9 @@ func (f *falhaPermanente) Unwrap() error { return f.err }
 // DLQ (ADR-0004). Se a transação não sair, a mensagem volta à fila e a
 // reentrega chega à mesma conclusão.
 func (p *Processador) falhar(ctx context.Context, id uuid.UUID, correlationID string, perm *falhaPermanente, log *slog.Logger) mensageria.Resultado {
-	falhou, err := p.repo.falhar(ctx, id, correlationID, perm.motivo)
+	falhou, err := tentar(ctx, p.cfg, log, "registrar falha", func() (bool, error) {
+		return p.repo.falhar(ctx, id, correlationID, perm.motivo)
+	})
 	if err != nil {
 		log.WarnContext(ctx, "não deu para registrar a falha; mensagem devolvida", "motivo", perm.motivo, "erro", err)
 		return mensageria.Devolver
@@ -211,10 +301,15 @@ func (p *Processador) processar(ctx context.Context, id uuid.UUID, correlationID
 	if err != nil {
 		return err
 	}
-	if err := p.arqs.PublicarZip(ctx, id, func(w io.Writer) error { return escreverZip(ctx, w, frames) }); err != nil {
+	err = tentarSo(ctx, p.cfg, log, "publicar zip", func() error {
+		return p.arqs.PublicarZip(ctx, id, func(w io.Writer) error { return escreverZip(ctx, w, frames) })
+	})
+	if err != nil {
 		return err
 	}
-	concluiu, err := p.repo.concluir(ctx, id, correlationID, p.cfg.RetencaoZip)
+	concluiu, err := tentar(ctx, p.cfg, log, "concluir", func() (bool, error) {
+		return p.repo.concluir(ctx, id, correlationID, p.cfg.RetencaoZip)
+	})
 	if err != nil {
 		return err
 	}

@@ -31,6 +31,7 @@ type ConfigConsumo struct {
 	Fila       string
 	Prefetch   int           // mensagens em andamento ao mesmo tempo (padrão 1)
 	BackoffMax time.Duration // teto da espera entre reconexões (padrão 30 s)
+	Topologia  Topologia     // declarada a cada conexão
 }
 
 // Consumir entrega as mensagens da fila ao Tratador, até Prefetch delas ao
@@ -76,7 +77,7 @@ func consumirConexao(ctx context.Context, url string, cfg ConfigConsumo, tratar 
 	defer func() { _ = conn.Close() }()
 	ch, err := conn.Channel()
 	if err == nil {
-		err = declararTopologia(ch)
+		err = declararTopologia(ch, cfg.Topologia)
 	}
 	if err == nil {
 		err = ch.Qos(cfg.Prefetch, 0, false)
