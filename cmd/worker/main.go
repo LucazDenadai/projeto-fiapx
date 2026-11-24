@@ -1,5 +1,5 @@
 // Comando worker: consome a fila de Processamento (próximos tickets). Por ora
-// expõe só a porta interna de saúde.
+// roda o relay da outbox e expõe a porta interna de saúde.
 //
 //	worker              sobe o Worker
 //	worker healthcheck  sonda o próprio /readyz (healthcheck do Compose)
@@ -12,10 +12,12 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/LucazDenadai/projeto-fiapx/internal/banco"
 	"github.com/LucazDenadai/projeto-fiapx/internal/mensageria"
 	"github.com/LucazDenadai/projeto-fiapx/internal/observabilidade"
+	"github.com/LucazDenadai/projeto-fiapx/internal/outbox"
 	"github.com/LucazDenadai/projeto-fiapx/internal/processo"
 )
 
@@ -48,11 +50,19 @@ func servir(ctx context.Context, log *slog.Logger) error {
 	if err != nil {
 		return err
 	}
+	intervaloOutbox, err := processo.Duracao("OUTBOX_INTERVALO", time.Second)
+	if err != nil {
+		return err
+	}
 	pool, err := banco.Abrir(ctx, dbURL)
 	if err != nil {
 		return err
 	}
 	defer pool.Close()
+
+	// Relay da outbox (ADR-0003): publica os eventos que o Worker grava.
+	pararRelay := outbox.Subir(ctx, pool, amqpURL, outbox.Config{Intervalo: intervaloOutbox}, log)
+	defer pararRelay()
 
 	interno := processo.ServidorInterno(log,
 		observabilidade.Dependencia{Nome: "postgres", Verificar: banco.Verificacao(pool)},
