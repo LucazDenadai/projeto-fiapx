@@ -91,6 +91,7 @@ func servir(ctx context.Context, log *slog.Logger) error {
 		return err
 	}
 	topologia := mensageria.Topologia{LimiteEntregas: int(limiteEntregas)}
+	avisarConsumerTimeout(log, timeoutFFmpeg, orcamentoRetry)
 	dados := processo.Variavel("DATA_DIR", "/data")
 	// Disco efêmero do container, nunca o volume (ADR-0005).
 	trabalho := processo.Variavel("TRABALHO_DIR", filepath.Join(os.TempDir(), "fiapx-worker"))
@@ -148,4 +149,19 @@ func servir(ctx context.Context, log *slog.Logger) error {
 		observabilidade.Dependencia{Nome: "volume", Verificar: armazenamento.Verificacao(dados)},
 	)
 	return processo.Servir(ctx, log, interno)
+}
+
+// consumerTimeoutRabbitMQ é o padrão do broker: uma mensagem sem ack por mais
+// tempo que isso fecha o canal e conta uma entrega espúria.
+const consumerTimeoutRabbitMQ = 30 * time.Minute
+
+// avisarConsumerTimeout avisa se, no pior caso, um Processamento passa do
+// consumer_timeout: o ffmpeg mais o orçamento de cada operação de
+// infraestrutura com retry antes de responder (ler original, iniciar,
+// publicar zip, concluir ou registrar a falha) (ADR-0004).
+func avisarConsumerTimeout(log *slog.Logger, timeoutFFmpeg, orcamento time.Duration) {
+	if pior := timeoutFFmpeg + 4*orcamento; pior >= consumerTimeoutRabbitMQ {
+		log.Warn("FFMPEG_TIMEOUT + 4×RETRY_ORCAMENTO passa do consumer_timeout do RabbitMQ; o broker pode derrubar o canal no meio de um Processamento",
+			"pior_caso", pior.String(), "consumer_timeout", consumerTimeoutRabbitMQ.String())
+	}
 }

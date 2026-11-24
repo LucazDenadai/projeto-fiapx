@@ -590,7 +590,8 @@ func TestProcessar_OriginalAusenteDevolve(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if r := c.processador(t, nil, nil).Processar(t.Context(), mensagem(id, "c")); r != mensageria.Devolver {
+	semRetry := processamento.Config{OrcamentoRetry: time.Millisecond}
+	if r := c.processadorCom(t, nil, nil, semRetry, slog.New(slog.DiscardHandler)).Processar(t.Context(), mensagem(id, "c")); r != mensageria.Devolver {
 		t.Errorf("resultado = %v, quero Devolver", r)
 	}
 	if s := c.status(t, id); s != "processando" {

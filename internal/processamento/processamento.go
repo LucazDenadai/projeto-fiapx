@@ -210,16 +210,18 @@ func (p *Processador) lerMensagem(ctx context.Context, corpo []byte) (id uuid.UU
 }
 
 // tentar repete op enquanto o erro for transitório, com backoff exponencial a
-// partir de cfg.BackoffInicial, até a próxima espera passar do orçamento
-// (ADR-0004). Devolve o último resultado.
+// partir de cfg.BackoffInicial, até o orçamento acabar; a última espera
+// encolhe para caber nele (ADR-0004). Devolve o último resultado.
 func tentar[T any](ctx context.Context, cfg Config, log *slog.Logger, operacao string, op func() (T, error)) (T, error) {
 	limite := time.Now().Add(cfg.OrcamentoRetry)
 	espera := cfg.BackoffInicial
 	for {
 		v, err := op()
-		if err == nil || !transitorio(ctx, err) || time.Now().Add(espera).After(limite) {
+		resta := time.Until(limite)
+		if err == nil || !transitorio(ctx, err) || resta <= 0 {
 			return v, err
 		}
+		espera = min(espera, resta)
 		log.WarnContext(ctx, "infraestrutura falhou; tentando de novo", "operacao", operacao, "espera", espera.String(), "erro", err)
 		select {
 		case <-ctx.Done():
@@ -297,7 +299,17 @@ func (p *Processador) processar(ctx context.Context, id uuid.UUID, correlationID
 		}
 	}()
 
-	frames, err := p.extrair(ctx, p.arqs.Original(id), dir)
+	// O original vem do volume: se ele piscar, tenta de novo aqui, antes do
+	// ffprobe, em vez de gastar as entregas (ADR-0004). O ffmpeg em si não é
+	// repetido no processo, para não estourar o consumer_timeout.
+	original := p.arqs.Original(id)
+	if err := tentarSo(ctx, p.cfg, log, "ler original", func() error {
+		_, err := os.Stat(original)
+		return err
+	}); err != nil {
+		return fmt.Errorf("original: %w", err)
+	}
+	frames, err := p.extrair(ctx, original, dir)
 	if err != nil {
 		return err
 	}

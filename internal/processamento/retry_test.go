@@ -85,8 +85,9 @@ func TestProcessar_OrcamentoEsgotadoDevolve(t *testing.T) {
 	if r != mensageria.Devolver {
 		t.Errorf("resultado = %v, quero Devolver", r)
 	}
-	if d := time.Since(inicio); d > 5*time.Second {
-		t.Errorf("demorou %v; o orçamento era 1 s", d)
+	// O orçamento é usado inteiro: a última espera encolhe para caber nele.
+	if d := time.Since(inicio); d < 900*time.Millisecond || d > 5*time.Second {
+		t.Errorf("desistiu em %v; o orçamento era 1 s", d)
 	}
 	if _, err := os.Stat(c.volume.Original(id)); err != nil {
 		t.Errorf("original sumiu: %v", err)
@@ -172,8 +173,8 @@ func worker(t *testing.T, proc *processamento.Processador, urlFila, urlDLQ strin
 	t.Cleanup(func() { cancelar(); wg.Wait() })
 }
 
-// publicarJob espera a fila existir e publica o pedido de Processamento.
-func publicarJob(t *testing.T, url string, id uuid.UUID) {
+// publicarPedido espera a fila existir e publica o pedido de Processamento.
+func publicarPedido(t *testing.T, url string, id uuid.UUID) {
 	t.Helper()
 	conn, err := amqp.Dial(url)
 	if err != nil {
@@ -195,7 +196,7 @@ func publicarJob(t *testing.T, url string, id uuid.UUID) {
 	}
 	if err := ch.PublishWithContext(t.Context(), "", mensageria.FilaProcessamento, true, false,
 		amqp.Publishing{Body: mensagem(id, "corr-esgotado")}); err != nil {
-		t.Fatalf("publicar job: %v", err)
+		t.Fatalf("publicar pedido: %v", err)
 	}
 }
 
@@ -234,7 +235,7 @@ func TestWorker_TentativasEsgotadasVaoParaDLQEFalham(t *testing.T) {
 	top := mensageria.Topologia{LimiteEntregas: 2}
 	worker(t, c.processador(t, nil, semSaida{extracao.Novo(extracao.Config{})}), url, url, top)
 
-	publicarJob(t, url, id)
+	publicarPedido(t, url, id)
 
 	c.esperarFalhou(t, id, "erro_interno", 20*time.Second)
 }
@@ -261,7 +262,31 @@ func TestWorker_MorrendoEmLoopTerminaFalhou(t *testing.T) {
 	proc := c.processador(t, nil, derrubaOWorker{Extrator: extracao.Novo(extracao.Config{}), proxy: proxy})
 	worker(t, proc, urlProxy, url, top)
 
-	publicarJob(t, url, id)
+	publicarPedido(t, url, id)
 
 	c.esperarFalhou(t, id, "erro_interno", 30*time.Second)
+}
+
+// Volume fora do ar por um instante: a leitura do original tenta de novo, em
+// vez de gastar as entregas em segundos (ADR-0004).
+func TestProcessar_OriginalIndisponivelPorInstanteTentaDeNovo(t *testing.T) {
+	c := novoCenario(t)
+	id := c.videoRecebido(t, "recebido", time.Second)
+	original := c.volume.Original(id)
+	escondido := original + ".fora"
+	if err := os.Rename(original, escondido); err != nil {
+		t.Fatal(err)
+	}
+	time.AfterFunc(500*time.Millisecond, func() { _ = os.Rename(escondido, original) })
+	proc := c.processadorCom(t, nil, nil, processamento.Config{
+		BackoffInicial: 100 * time.Millisecond,
+		OrcamentoRetry: 5 * time.Second,
+	}, slog.New(slog.DiscardHandler))
+
+	if r := proc.Processar(t.Context(), mensagem(id, "c")); r != mensageria.Confirmar {
+		t.Fatalf("resultado = %v, quero Confirmar", r)
+	}
+	if s := c.status(t, id); s != "concluido" {
+		t.Errorf("status = %s, quero concluido", s)
+	}
 }
