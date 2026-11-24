@@ -40,11 +40,14 @@ func ler(t *testing.T, bruto []byte) (*mail.Message, string) {
 }
 
 func TestMontar_EmailDeFalha(t *testing.T) {
-	bruto, err := notificacao.Montar(eventoDeAna(), "nao-responda@fiapx.local")
+	email, err := notificacao.Montar(eventoDeAna(), "nao-responda@fiapx.local")
 	if err != nil {
 		t.Fatalf("montar: %v", err)
 	}
-	msg, corpo := ler(t, bruto)
+	if email.De != "nao-responda@fiapx.local" || email.Para != "ana@ex.com" {
+		t.Errorf("envelope = %q → %q", email.De, email.Para)
+	}
+	msg, corpo := ler(t, email.Mensagem)
 
 	assunto, err := new(mime.WordDecoder).DecodeHeader(msg.Header.Get("Subject"))
 	if err != nil || assunto != "Não conseguimos processar seu vídeo" {
@@ -78,11 +81,11 @@ func TestMontar_NomeComQuebraDeLinhaNaoCriaCabecalho(t *testing.T) {
 	ev := eventoDeAna()
 	ev.NomeOriginal = "video.mp4\r\nBcc: espiao@ex.com\r\n\r\nX-Outro: 1"
 
-	bruto, err := notificacao.Montar(ev, "nao-responda@fiapx.local")
+	email, err := notificacao.Montar(ev, "nao-responda@fiapx.local")
 	if err != nil {
 		t.Fatalf("montar: %v", err)
 	}
-	msg, corpo := ler(t, bruto)
+	msg, corpo := ler(t, email.Mensagem)
 
 	var nomes []string
 	for k := range msg.Header {
@@ -118,11 +121,24 @@ func TestMontar_DestinatarioInvalido(t *testing.T) {
 func TestMontar_MotivoDesconhecidoUsaTextoGenerico(t *testing.T) {
 	ev := eventoDeAna()
 	ev.Motivo = "codigo_novo"
-	bruto, err := notificacao.Montar(ev, "nao-responda@fiapx.local")
+	email, err := notificacao.Montar(ev, "nao-responda@fiapx.local")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, corpo := ler(t, bruto); !strings.Contains(corpo, "não conseguimos processar, tente novamente") || strings.Contains(corpo, "codigo_novo") {
+	if _, corpo := ler(t, email.Mensagem); !strings.Contains(corpo, "não conseguimos processar, tente novamente") || strings.Contains(corpo, "codigo_novo") {
 		t.Errorf("corpo:\n%s", corpo)
+	}
+}
+
+// Evento sem ocorrido_em: o e-mail sai sem a data, nunca com 01/01/0001.
+func TestMontar_SemDataOmiteAFrase(t *testing.T) {
+	ev := eventoDeAna()
+	ev.OcorridoEm = time.Time{}
+	email, err := notificacao.Montar(ev, "nao-responda@fiapx.local")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, corpo := ler(t, email.Mensagem); strings.Contains(corpo, "0001") || strings.Contains(corpo, "registrada em") {
+		t.Errorf("corpo com data zero:\n%s", corpo)
 	}
 }

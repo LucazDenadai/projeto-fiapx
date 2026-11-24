@@ -85,7 +85,6 @@ func NovoProcessador(pool *pgxpool.Pool, arqs Armazenamento, ext Extrator, cfg C
 	if cfg.DuracaoMaxima <= 0 {
 		cfg.DuracaoMaxima = DuracaoMaximaPadrao
 	}
-	cfg.Retry = cfg.Retry.ComPadroes()
 	return &Processador{repo: repositorio{pool: pool}, arqs: arqs, ext: ext, cfg: cfg, log: log}
 }
 

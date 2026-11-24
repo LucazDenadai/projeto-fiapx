@@ -186,3 +186,22 @@ func TestNotifier_BinarioSemPostgres(t *testing.T) {
 		}
 	}
 }
+
+// Evento que nunca vai virar e-mail (ilegível ou com destinatário inválido)
+// não some: vai direto para a notificacao.dlq, parada para inspeção.
+func TestNotifier_EventoSemConsertoVaiParaDLQ(t *testing.T) {
+	mp := integracao.NovoMailpit(t)
+	url := integracao.RabbitMQ(t)
+	notifier(t, url, mp.SMTP, mensageria.Topologia{}, retentativa.Politica{})
+
+	ch := publicarEvento(t, url, mensageria.EventoFalhou, eventoFalhou("nao e email"))
+
+	dlq := mensageria.DLQ(mensageria.FilaNotificacao)
+	for range 100 {
+		if q, err := ch.QueueDeclarePassive(dlq, true, false, false, false, nil); err == nil && q.Messages == 1 {
+			return
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	t.Fatalf("o evento com destinatário inválido não chegou a %s", dlq)
+}

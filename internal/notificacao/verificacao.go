@@ -21,7 +21,7 @@ func Verificacao(enderecoSMTP string) func(context.Context) error {
 		var d net.Dialer
 		conn, err := d.DialContext(ctx, "tcp", enderecoSMTP)
 		if err != nil {
-			return err
+			return fmt.Errorf("conectar ao smtp %s: %w", enderecoSMTP, err)
 		}
 		_ = conn.Close()
 		return nil
