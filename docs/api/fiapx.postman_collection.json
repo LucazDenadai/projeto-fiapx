@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "FIAP X — processamento de vídeos",
-    "description": "Interface, documentação e smoke test da API (ADR-0013).\n\nRode em ordem: **Cadastro** gera um e-mail novo a cada execução, e **Login** salva o token na variável de coleção `token`, que as rotas de Vídeo mandam como `Authorization: Bearer` sozinhas.\n\nErros vêm como `{\"erro\": \"mensagem pública\"}`.\n\n**Enviar vídeo** usa o `video.mp4` de 5 s versionado ao lado da coleção. No newman, rode de dentro de `docs/api/` ou passe `--working-dir docs/api`.",
+    "description": "Interface, documentação e smoke test da API (ADR-0013).\n\nRode em ordem: **Cadastro** gera um e-mail novo a cada execução, e **Login** salva o token na variável de coleção `token`, que as rotas de Vídeo mandam como `Authorization: Bearer` sozinhas.\n\nErros vêm como `{\"erro\": \"mensagem pública\"}`.\n\n**Enviar vídeo** usa o `video.mp4` de 5 s versionado ao lado da coleção. **Aguardar conclusão** repete a consulta até o Vídeo ficar `concluido`, e **Baixar zip** confere o Zip de frames: a coleção inteira, em ordem, é o fluxo feliz e o smoke test do CD. No newman, rode de dentro de `docs/api/` ou passe `--working-dir docs/api`.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "auth": {
@@ -26,6 +26,10 @@
     {
       "key": "video_id",
       "value": ""
+    },
+    {
+      "key": "tentativas",
+      "value": "0"
     }
   ],
   "item": [
@@ -239,6 +243,85 @@
             "exec": [
               "pm.test('200 OK', () => pm.response.to.have.status(200));",
               "pm.test('é o vídeo enviado', () => pm.expect(pm.response.json().id).to.eql(pm.collectionVariables.get('video_id')));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Aguardar conclusão",
+      "request": {
+        "method": "GET",
+        "url": {
+          "raw": "{{base_url}}/videos/{{video_id}}",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "videos",
+            "{{video_id}}"
+          ]
+        },
+        "description": "Polling do Vídeo enviado: repete esta requisição a cada 2 s, até 60 vezes, enquanto o status for `recebido` ou `processando`, e segue quando chega a `concluido`.\n\nSe o Vídeo terminar `falhou`, o teste falha e mostra o `motivo`. No Postman, rode pelo Collection Runner para o polling acontecer."
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const corpo = pm.response.json();",
+              "const tentativas = Number(pm.collectionVariables.get('tentativas') || 0) + 1;",
+              "const seguir = (proxima) => (pm.execution && pm.execution.setNextRequest)",
+              "  ? pm.execution.setNextRequest(proxima)",
+              "  : postman.setNextRequest(proxima);",
+              "if (['recebido', 'processando'].includes(corpo.status) && tentativas < 60) {",
+              "  pm.collectionVariables.set('tentativas', tentativas);",
+              "  setTimeout(() => {}, 2000);",
+              "  seguir(pm.info.requestName);",
+              "  return;",
+              "}",
+              "pm.collectionVariables.set('tentativas', 0);",
+              "pm.test('Vídeo concluido', () => {",
+              "  pm.expect(corpo.status, `status ${corpo.status} ${corpo.motivo || ''}`).to.eql('concluido');",
+              "  pm.expect(corpo.download).to.eql(`/videos/${corpo.id}/zip`);",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Baixar zip",
+      "request": {
+        "method": "GET",
+        "url": {
+          "raw": "{{base_url}}/videos/{{video_id}}/zip",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "videos",
+            "{{video_id}}",
+            "zip"
+          ]
+        },
+        "description": "Baixa o Zip de frames (um PNG por segundo de vídeo) de um Vídeo `concluido`.\n\n- `200` o zip, com `Content-Disposition: attachment; filename=<nome original sem extensão>-frames.zip`.\n- `206` trecho pedido com o header `Range` (download retomável).\n- `401` sem token.\n- `404` `vídeo não encontrado`: id inexistente ou Vídeo de outro Usuário (mesma resposta).\n- `409` Vídeo ainda não concluído: `{\"erro\": ..., \"status\": \"processando\"}`. Se o Vídeo falhou, vem também o Motivo da falha: `{\"erro\": ..., \"status\": \"falhou\", \"motivo\": \"video_invalido\", \"motivo_texto\": ...}`.\n- `410` o zip passou dos 7 dias de retenção (`ZIP_RETENCAO`); envie o vídeo de novo.\n\nNo Postman, use **Send and Download** para salvar o arquivo."
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('200 OK', () => pm.response.to.have.status(200));",
+              "pm.test('zip como anexo com o nome do vídeo', () => {",
+              "  pm.expect(pm.response.headers.get('Content-Type')).to.eql('application/zip');",
+              "  pm.expect(pm.response.headers.get('Content-Disposition')).to.eql('attachment; filename=video-frames.zip');",
+              "});",
+              "pm.test('corpo é um zip', () => {",
+              "  pm.expect(pm.response.stream.slice(0, 4).toString('latin1')).to.eql('PK\\u0003\\u0004');",
+              "});"
             ]
           }
         }

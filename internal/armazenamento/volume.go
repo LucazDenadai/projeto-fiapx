@@ -69,6 +69,16 @@ func (v *Volume) PublicarZip(ctx context.Context, id uuid.UUID, escrever func(io
 	return nil
 }
 
+// AbrirZip abre o Zip de frames do Vídeo para leitura. Zip ausente dá um erro
+// que embrulha os.ErrNotExist.
+func (v *Volume) AbrirZip(_ context.Context, id uuid.UUID) (*os.File, error) {
+	f, err := os.Open(filepath.Join(v.dirVideo(id), nomeZip))
+	if err != nil {
+		return nil, fmt.Errorf("abrir zip: %w", err)
+	}
+	return f, nil
+}
+
 // ApagarOriginal remove o original do Vídeo; se ele já não existir, não é erro.
 func (v *Volume) ApagarOriginal(_ context.Context, id uuid.UUID) error {
 	if err := os.Remove(v.Original(id)); err != nil && !errors.Is(err, os.ErrNotExist) {

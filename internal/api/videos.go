@@ -230,15 +230,26 @@ func (a *aplicacao) listar(w http.ResponseWriter, r *http.Request) {
 	responderJSON(w, http.StatusOK, resp)
 }
 
-func (a *aplicacao) consultar(w http.ResponseWriter, r *http.Request) {
-	usuarioID, ok := usuarioDe(r)
+// videoDaRota lê o Usuário do token e o id do Vídeo da rota. Responde e
+// devolve false se faltar um deles: id malformado dá o mesmo 404 do Vídeo
+// inexistente.
+func videoDaRota(w http.ResponseWriter, r *http.Request) (usuarioID, id uuid.UUID, ok bool) {
+	usuarioID, ok = usuarioDe(r)
 	if !ok {
 		responderErro(w, http.StatusUnauthorized, "token inválido")
-		return
+		return usuarioID, id, false
 	}
 	id, err := uuid.Parse(r.PathValue("id"))
 	if err != nil {
 		responderErro(w, http.StatusNotFound, videos.ErrNaoEncontrado.Error())
+		return usuarioID, id, false
+	}
+	return usuarioID, id, true
+}
+
+func (a *aplicacao) consultar(w http.ResponseWriter, r *http.Request) {
+	usuarioID, id, ok := videoDaRota(w, r)
+	if !ok {
 		return
 	}
 	v, err := a.videos.Buscar(r.Context(), usuarioID, id)
@@ -251,4 +262,53 @@ func (a *aplicacao) consultar(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	responderJSON(w, http.StatusOK, paraJSON(v, time.Now()))
+}
+
+// baixar serve o Zip de frames com ServeContent: Range (download retomável),
+// If-Modified-Since e HEAD saem de graça (ADR-0006).
+func (a *aplicacao) baixar(w http.ResponseWriter, r *http.Request) {
+	usuarioID, id, ok := videoDaRota(w, r)
+	if !ok {
+		return
+	}
+	zip, err := a.videos.AbrirZip(r.Context(), usuarioID, id, time.Now())
+	var naoConcluido *videos.ErroNaoConcluido
+	switch {
+	case errors.As(err, &naoConcluido):
+		responderNaoConcluido(w, naoConcluido)
+		return
+	case errors.Is(err, videos.ErrNaoEncontrado):
+		responderErro(w, http.StatusNotFound, videos.ErrNaoEncontrado.Error())
+		return
+	case errors.Is(err, videos.ErrZipExpirado):
+		responderErro(w, http.StatusGone, videos.ErrZipExpirado.Error())
+		return
+	case err != nil:
+		a.erroInterno(w, r, err)
+		return
+	}
+	defer func() { _ = zip.Arquivo.Close() }()
+	info, err := zip.Arquivo.Stat()
+	if err != nil {
+		a.erroInterno(w, r, err)
+		return
+	}
+	h := w.Header()
+	h.Set("Content-Type", "application/zip")
+	// FormatMediaType cita ou codifica (RFC 2231) o nome, que vem do Usuário:
+	// aspas, ponto e vírgula e acentos não quebram nem injetam o header.
+	h.Set("Content-Disposition", mime.FormatMediaType("attachment", map[string]string{"filename": zip.Nome}))
+	h.Set("Cache-Control", "private, no-cache")
+	h.Set("X-Content-Type-Options", "nosniff")
+	http.ServeContent(w, r, zip.Nome, info.ModTime(), zip.Arquivo)
+}
+
+// responderNaoConcluido responde 409 com o status e, se o Vídeo falhou, o
+// Motivo da falha e o texto fixo dele (ADR-0006).
+func responderNaoConcluido(w http.ResponseWriter, e *videos.ErroNaoConcluido) {
+	corpo := map[string]string{"erro": e.Error(), "status": e.Video.Status}
+	if e.Video.Status == videos.StatusFalhou {
+		corpo["motivo"], corpo["motivo_texto"] = e.Video.Motivo, videos.TextoMotivo[e.Video.Motivo]
+	}
+	responderJSON(w, http.StatusConflict, corpo)
 }

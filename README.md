@@ -16,7 +16,7 @@ docker compose ps             # api, worker e notifier ficam healthy
 
 Só a API publica porta (`API_PORT`, padrão 8080). A porta interna `9090` de cada processo (`/healthz`, `/readyz`) fica na rede do Compose.
 
-Para usar a API, importe no Postman a coleção e o ambiente de [`docs/api/`](docs/api/) e rode as requisições em ordem: o **Login** salva o token, que vai sozinho nas rotas de Vídeo. O **Enviar vídeo** usa `docs/api/video.mp4`, um vídeo de 5 s versionado no repositório.
+Para usar a API, importe no Postman a coleção e o ambiente de [`docs/api/`](docs/api/) e rode as requisições em ordem: o **Login** salva o token, que vai sozinho nas rotas de Vídeo. O **Enviar vídeo** usa `docs/api/video.mp4`, um vídeo de 5 s versionado no repositório. O **Aguardar conclusão** repete a consulta até o Vídeo ficar `concluido`, e o **Baixar zip** traz o Zip de frames; no Postman, rode a coleção pelo Collection Runner.
 
 Testes: `go test -race ./...` sobe Postgres, RabbitMQ e Redis descartáveis com testcontainers (Docker precisa estar rodando); `go test -short ./...` pula a integração. O CI fica em [`.github/workflows/ci.yml`](.github/workflows/ci.yml).
 

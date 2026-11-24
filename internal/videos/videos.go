@@ -1,6 +1,6 @@
 // Package videos é o lado da API do ciclo de vida do Vídeo: recebe o envio,
-// cria o Vídeo com a linha da outbox e lista os Vídeos do Usuário (ADR-0006,
-// ADR-0014).
+// cria o Vídeo com a linha da outbox, lista os Vídeos do Usuário e entrega o
+// Zip de frames (ADR-0006, ADR-0014, ADR-0015).
 package videos
 
 import (
@@ -10,6 +10,9 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"os"
+	"path"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -43,10 +46,11 @@ type Video struct {
 	ZipExpiraEm  *time.Time
 }
 
-// Armazenamento é o que o envio precisa do volume (ADR-0005).
+// Armazenamento é o que o envio e o download precisam do volume (ADR-0005).
 type Armazenamento interface {
 	GravarOriginal(ctx context.Context, id uuid.UUID, conteudo io.Reader) error
 	Apagar(ctx context.Context, id uuid.UUID) error
+	AbrirZip(ctx context.Context, id uuid.UUID) (*os.File, error)
 }
 
 // Servico recebe envios e consulta Vídeos.
@@ -157,6 +161,67 @@ func (s *Servico) Listar(ctx context.Context, usuarioID uuid.UUID, cursor string
 		pag.Proximo = codificarCursor(posicao{criadoEm: ultimo.CriadoEm, id: ultimo.ID})
 	}
 	return pag, nil
+}
+
+// ErrZipExpirado: o Vídeo concluiu, mas o Zip de frames passou da retenção
+// (ADR-0015).
+var ErrZipExpirado = errors.New("o zip de frames expirou; envie o vídeo de novo")
+
+// ErroNaoConcluido: o Vídeo ainda não tem Zip de frames, ou nunca vai ter
+// (falhou). Video vai junto para a resposta mostrar o status e o Motivo da
+// falha.
+type ErroNaoConcluido struct {
+	Video Video
+}
+
+func (e *ErroNaoConcluido) Error() string {
+	if e.Video.Status == StatusFalhou {
+		return "o processamento do vídeo falhou"
+	}
+	return "o vídeo ainda está em processamento"
+}
+
+// Zip é o Zip de frames aberto para download. Quem recebe fecha Arquivo.
+type Zip struct {
+	Arquivo *os.File
+	// Nome é o nome de download: <nome original sem extensão>-frames.zip.
+	Nome string
+}
+
+// AbrirZip abre o Zip de frames de um Vídeo do Usuário. O dono é checado
+// antes de tudo: Vídeo alheio dá ErrNaoEncontrado, como o inexistente
+// (ADR-0006). Depois, *ErroNaoConcluido se o Vídeo não concluiu e
+// ErrZipExpirado se o zip passou da retenção ou já saiu do volume.
+func (s *Servico) AbrirZip(ctx context.Context, usuarioID, id uuid.UUID, agora time.Time) (Zip, error) {
+	v, err := s.repo.buscar(ctx, usuarioID, id)
+	if err != nil {
+		return Zip{}, err
+	}
+	if v.Status != StatusConcluido {
+		return Zip{}, &ErroNaoConcluido{Video: v}
+	}
+	if !v.ZipDisponivel(agora) {
+		return Zip{}, ErrZipExpirado
+	}
+	f, err := s.arqs.AbrirZip(ctx, id)
+	if errors.Is(err, os.ErrNotExist) {
+		// O limpador apagou o zip entre a consulta e a abertura.
+		s.log.WarnContext(ctx, "zip ausente no volume de vídeo concluído", "video_id", id)
+		return Zip{}, ErrZipExpirado
+	}
+	if err != nil {
+		return Zip{}, fmt.Errorf("abrir zip: %w", err)
+	}
+	return Zip{Arquivo: f, Nome: nomeDoZip(v.NomeOriginal)}, nil
+}
+
+// nomeDoZip troca a extensão do nome original por -frames.zip.
+func nomeDoZip(nomeOriginal string) string {
+	base := strings.TrimSuffix(nomeOriginal, path.Ext(nomeOriginal))
+	if base == "" {
+		base = "video"
+	}
+	return base + "-frames.zip"
 }
 
 // ZipDisponivel diz se o Zip de frames pode ser baixado agora.
