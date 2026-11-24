@@ -1,9 +1,11 @@
 package integracao
 
 import (
+	"os"
 	"os/exec"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 )
@@ -30,6 +32,29 @@ func Video(t *testing.T, duracao time.Duration) string {
 		"-nostdin", "-v", "error", "-f", "lavfi", "-i", fonte, "-pix_fmt", "yuv420p", saida)
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("gerar vídeo de teste: %v: %s", err, out)
+	}
+	return saida
+}
+
+// VideoSemDuracao é como Video, mas em Matroska gravado em fluxo (como fazem
+// gravadores ao vivo): o contêiner não informa a duração, e o ffprobe não a
+// devolve.
+func VideoSemDuracao(t *testing.T, duracao time.Duration) string {
+	t.Helper()
+	ExigirFFmpeg(t)
+	saida := filepath.Join(t.TempDir(), "video.mkv")
+	f, err := os.Create(saida) //nolint:gosec // diretório temporário do teste
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = f.Close() }()
+	fonte := "testsrc=size=160x120:rate=10:duration=" + strconv.FormatFloat(duracao.Seconds(), 'f', -1, 64)
+	cmd := exec.CommandContext(t.Context(), "ffmpeg", //nolint:gosec // argumentos do próprio teste
+		"-nostdin", "-v", "error", "-f", "lavfi", "-i", fonte, "-pix_fmt", "yuv420p", "-f", "matroska", "pipe:")
+	var erro strings.Builder
+	cmd.Stdout, cmd.Stderr = f, &erro
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("gerar vídeo de teste: %v: %s", err, erro.String())
 	}
 	return saida
 }

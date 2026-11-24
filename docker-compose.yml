@@ -110,9 +110,10 @@ services:
       RABBITMQ_URL: *rabbitmq-url
       DATA_DIR: /data
       OUTBOX_INTERVALO: ${OUTBOX_INTERVALO:-}
-      # Processamento (ADR-0011, ADR-0015). Vazio: 1, 10 min e 7 dias
+      # Processamento (ADR-0011, ADR-0015). Vazio: 1, 10 min, 10 min e 7 dias
       WORKER_PREFETCH: ${WORKER_PREFETCH:-}
       FFMPEG_TIMEOUT: ${FFMPEG_TIMEOUT:-}
+      VIDEO_DURACAO_MAXIMA: ${VIDEO_DURACAO_MAXIMA:-}
       ZIP_RETENCAO: ${ZIP_RETENCAO:-}
     volumes:
       - dados:/data

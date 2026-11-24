@@ -164,11 +164,21 @@ func (v Video) ZipDisponivel(agora time.Time) bool {
 	return v.Status == StatusConcluido && v.ZipExpiraEm != nil && agora.Before(*v.ZipExpiraEm)
 }
 
+// Motivos da falha: códigos públicos, contrato da listagem e da notificação
+// (ADR-0004, ADR-0011).
+const (
+	MotivoVideoInvalido   = "video_invalido"
+	MotivoVideoMuitoLongo = "video_muito_longo"
+	MotivoSemFrames       = "sem_frames"
+	MotivoTempoExcedido   = "tempo_excedido"
+	MotivoErroInterno     = "erro_interno"
+)
+
 // TextoMotivo é a explicação pública de cada Motivo da falha (ADR-0004).
 var TextoMotivo = map[string]string{
-	"video_invalido":    "o arquivo não pôde ser lido como vídeo",
-	"video_muito_longo": "o vídeo passa da duração máxima",
-	"sem_frames":        "não foi possível extrair nenhum frame do vídeo",
-	"tempo_excedido":    "o processamento passou do tempo máximo",
-	"erro_interno":      "não conseguimos processar, tente novamente",
+	MotivoVideoInvalido:   "o arquivo não pôde ser lido como vídeo",
+	MotivoVideoMuitoLongo: "o vídeo passa da duração máxima",
+	MotivoSemFrames:       "não foi possível extrair nenhum frame do vídeo",
+	MotivoTempoExcedido:   "o processamento passou do tempo máximo",
+	MotivoErroInterno:     "não conseguimos processar, tente novamente",
 }

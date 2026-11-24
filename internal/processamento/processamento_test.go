@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"os"
@@ -46,15 +47,32 @@ func (c cenario) processador(t *testing.T, arqs processamento.Armazenamento, ext
 	if arqs == nil {
 		arqs = c.volume
 	}
+	return c.processadorCom(t, arqs, ext, processamento.Config{}, slog.New(slog.DiscardHandler))
+}
+
+// processadorCom monta o Processador com a configuração dada, sempre no
+// diretório de trabalho do cenário.
+func (c cenario) processadorCom(t *testing.T, arqs processamento.Armazenamento, ext processamento.Extrator, cfg processamento.Config, log *slog.Logger) *processamento.Processador {
+	t.Helper()
+	if arqs == nil {
+		arqs = c.volume
+	}
 	if ext == nil {
 		ext = extracao.Novo(extracao.Config{})
 	}
-	return processamento.NovoProcessador(c.pool, arqs, ext, processamento.Config{DirTrabalho: c.trabalho}, slog.New(slog.DiscardHandler))
+	cfg.DirTrabalho = c.trabalho
+	return processamento.NovoProcessador(c.pool, arqs, ext, cfg, log)
 }
 
 // videoRecebido cria um Usuário e um Vídeo no status dado, com o original de
 // duracao no volume, como a API deixa depois do envio.
 func (c cenario) videoRecebido(t *testing.T, status string, duracao time.Duration) uuid.UUID {
+	t.Helper()
+	return c.videoComOriginal(t, status, integracao.Video(t, duracao))
+}
+
+// videoComOriginal é o videoRecebido com o arquivo dado como original.
+func (c cenario) videoComOriginal(t *testing.T, status, original string) uuid.UUID {
 	t.Helper()
 	ctx := t.Context()
 	var usuario uuid.UUID
@@ -67,7 +85,7 @@ func (c cenario) videoRecebido(t *testing.T, status string, duracao time.Duratio
 		id, usuario, status); err != nil {
 		t.Fatalf("inserir vídeo: %v", err)
 	}
-	f, err := os.Open(integracao.Video(t, duracao))
+	f, err := os.Open(original) //nolint:gosec // arquivo gerado pelo teste
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -370,18 +388,210 @@ func (l lento) ExtrairFrames(ctx context.Context, arquivo, dir string) ([]string
 	return l.Extrator.ExtrairFrames(ctx, arquivo, dir)
 }
 
-func TestProcessar_TimeoutValePorProcessamento(t *testing.T) {
+// truncado é um MP4 com os magic bytes certos, mas cortado antes do índice
+// (moov): passa na API e o ffprobe não consegue ler.
+func truncado(t *testing.T) string {
+	t.Helper()
+	inteiro, err := os.ReadFile(integracao.Video(t, 3*time.Second))
+	if err != nil {
+		t.Fatal(err)
+	}
+	caminho := filepath.Join(t.TempDir(), "truncado.mp4")
+	if err := os.WriteFile(caminho, inteiro[:2000], 0o600); err != nil { //nolint:gosec // caminho do próprio teste
+		t.Fatal(err)
+	}
+	return caminho
+}
+
+func TestProcessar_FalhaPermanente(t *testing.T) {
+	casos := []struct {
+		nome     string
+		original func(t *testing.T) string
+		ext      processamento.Extrator
+		cfg      processamento.Config
+		motivo   string
+	}{
+		{
+			nome:     "corrompido",
+			original: truncado,
+			motivo:   "video_invalido",
+		},
+		{
+			nome:     "acima da duração máxima",
+			original: func(t *testing.T) string { return integracao.Video(t, 3*time.Second) },
+			cfg:      processamento.Config{DuracaoMaxima: 2 * time.Second},
+			motivo:   "video_muito_longo",
+		},
+		{
+			// Sem duração no contêiner, a contagem de frames (1 por segundo)
+			// faz a conferência.
+			nome:     "acima da duração máxima, sem duração no contêiner",
+			original: func(t *testing.T) string { return integracao.VideoSemDuracao(t, 5*time.Second) },
+			cfg:      processamento.Config{DuracaoMaxima: 2 * time.Second},
+			motivo:   "video_muito_longo",
+		},
+		{
+			// Com 1 frame por segundo, menos de meio segundo não dá frame
+			// nenhum, e o ffmpeg sai sem erro.
+			nome:     "sem frames",
+			original: func(t *testing.T) string { return integracao.Video(t, 400*time.Millisecond) },
+			motivo:   "sem_frames",
+		},
+		{
+			// Cada execução cabe em 500 ms; as duas juntas, não: o prazo vale
+			// para o Processamento.
+			nome:     "timeout",
+			original: func(t *testing.T) string { return integracao.Video(t, time.Second) },
+			ext:      lento{extracao.Novo(extracao.Config{})},
+			cfg:      processamento.Config{TimeoutExtracao: 500 * time.Millisecond},
+			motivo:   "tempo_excedido",
+		},
+	}
+	for _, tc := range casos {
+		t.Run(tc.nome, func(t *testing.T) {
+			c := novoCenario(t)
+			id := c.videoComOriginal(t, "recebido", tc.original(t))
+			proc := c.processadorCom(t, nil, tc.ext, tc.cfg, slog.New(slog.DiscardHandler))
+
+			if r := proc.Processar(t.Context(), mensagem(id, "corr-9")); r != mensageria.Confirmar {
+				t.Fatalf("resultado = %v, quero Confirmar (falha permanente não volta à fila)", r)
+			}
+			var status, motivo, email string
+			if err := c.pool.QueryRow(t.Context(), `SELECT v.status, v.motivo, u.email FROM videos v
+				JOIN usuarios u ON u.id = v.usuario_id WHERE v.id = $1`, id).Scan(&status, &motivo, &email); err != nil {
+				t.Fatalf("ler vídeo: %v", err)
+			}
+			if status != "falhou" || motivo != tc.motivo {
+				t.Errorf("status = %s, motivo = %s; quero falhou, %s", status, motivo, tc.motivo)
+			}
+			evs := c.eventos(t)
+			if len(evs) != 1 {
+				t.Fatalf("eventos na outbox = %d, quero 1", len(evs))
+			}
+			e := evs[0]
+			if e.exchange != "processamento.eventos" || e.routingKey != "falhou" {
+				t.Errorf("evento em %s/%s, quero processamento.eventos/falhou", e.exchange, e.routingKey)
+			}
+			quero := map[string]any{"video_id": id.String(), "correlation_id": "corr-9", "email": email,
+				"nome_original": "ferias.mp4", "motivo": tc.motivo}
+			for campo, valor := range quero {
+				if e.payload[campo] != valor {
+					t.Errorf("evento[%s] = %v, quero %v", campo, e.payload[campo], valor)
+				}
+			}
+			if e.payload["ocorrido_em"] == nil || len(e.payload) != len(quero)+1 {
+				t.Errorf("evento = %v, quero só os campos do ADR-0008", e.payload)
+			}
+			if _, err := os.Stat(c.volume.Original(id)); !errors.Is(err, os.ErrNotExist) {
+				t.Errorf("original ainda existe: %v", err)
+			}
+			c.trabalhoVazio(t)
+		})
+	}
+}
+
+func TestProcessar_SemDuracaoNoContainerConclui(t *testing.T) {
+	c := novoCenario(t)
+	id := c.videoComOriginal(t, "recebido", integracao.VideoSemDuracao(t, 3*time.Second))
+
+	if r := c.processador(t, nil, nil).Processar(t.Context(), mensagem(id, "c")); r != mensageria.Confirmar {
+		t.Fatalf("resultado = %v, quero Confirmar", r)
+	}
+	if s := c.status(t, id); s != "concluido" {
+		t.Errorf("status = %s, quero concluido", s)
+	}
+}
+
+// A saída do ffmpeg só vai ao log, junto do correlation_id (ADR-0004).
+func TestProcessar_SaidaDoFFmpegSoNoLog(t *testing.T) {
+	c := novoCenario(t)
+	id := c.videoComOriginal(t, "recebido", truncado(t))
+	var buf strings.Builder
+	log := slog.New(slog.NewJSONHandler(&buf, nil))
+
+	c.processadorCom(t, nil, nil, processamento.Config{}, log).Processar(t.Context(), mensagem(id, "corr-log"))
+
+	var achou bool
+	for linha := range strings.Lines(buf.String()) {
+		if strings.Contains(linha, "moov atom not found") && strings.Contains(linha, `"correlation_id":"corr-log"`) {
+			achou = true
+		}
+	}
+	if !achou {
+		t.Errorf("log sem a saída do ffprobe com o correlation_id:\n%s", buf.String())
+	}
+	if p := c.eventos(t)[0].payload; strings.Contains(fmt.Sprint(p), "moov") {
+		t.Errorf("evento vaza a saída do ffprobe: %v", p)
+	}
+}
+
+// Vídeo que ficou terminal por outra entrega no meio do caminho: a falha não
+// sobrescreve o status nem gera evento.
+func TestProcessar_FalhaDeVideoJaTerminalNaoGravaEvento(t *testing.T) {
+	c := novoCenario(t)
+	id := c.videoRecebido(t, "recebido", 400*time.Millisecond)
+	ext := concluiNoMeio{Extrator: extracao.Novo(extracao.Config{}), c: c, id: id}
+
+	if r := c.processador(t, nil, ext).Processar(t.Context(), mensagem(id, "c")); r != mensageria.Confirmar {
+		t.Fatalf("resultado = %v, quero Confirmar", r)
+	}
+	if s := c.status(t, id); s != "concluido" {
+		t.Errorf("status = %s, quero concluido (terminal é final)", s)
+	}
+	if n := len(c.eventos(t)); n != 0 {
+		t.Errorf("eventos na outbox = %d, quero 0", n)
+	}
+}
+
+// concluiNoMeio simula outra entrega que conclui o Vídeo enquanto este
+// Processamento ainda extrai.
+type concluiNoMeio struct {
+	processamento.Extrator
+	c  cenario
+	id uuid.UUID
+}
+
+func (e concluiNoMeio) ExtrairFrames(ctx context.Context, arquivo, dir string) ([]string, error) {
+	if _, err := e.c.pool.Exec(ctx, `UPDATE videos SET status = 'concluido' WHERE id = $1`, e.id); err != nil {
+		return nil, err
+	}
+	return e.Extrator.ExtrairFrames(ctx, arquivo, dir)
+}
+
+// O Worker desligando no meio da extração não é timeout: a mensagem volta à
+// fila para outro Worker.
+func TestProcessar_DesligamentoDevolveSemFalhar(t *testing.T) {
 	c := novoCenario(t)
 	id := c.videoRecebido(t, "recebido", time.Second)
-	// Cada execução cabe em 500 ms; as duas juntas, não.
-	proc := processamento.NovoProcessador(c.pool, c.volume, lento{extracao.Novo(extracao.Config{})},
-		processamento.Config{DirTrabalho: c.trabalho, TimeoutExtracao: 500 * time.Millisecond}, slog.New(slog.DiscardHandler))
+	ctx, cancelar := context.WithCancel(t.Context())
+	time.AfterFunc(100*time.Millisecond, cancelar)
 
-	if r := proc.Processar(t.Context(), mensagem(id, "c")); r != mensageria.Devolver {
-		t.Errorf("resultado = %v, quero Devolver (prazo estourado)", r)
+	r := c.processador(t, nil, lento{extracao.Novo(extracao.Config{})}).Processar(ctx, mensagem(id, "c"))
+
+	if r != mensageria.Devolver {
+		t.Errorf("resultado = %v, quero Devolver", r)
 	}
 	if s := c.status(t, id); s != "processando" {
 		t.Errorf("status = %s, quero processando", s)
 	}
-	c.trabalhoVazio(t)
+	if _, err := os.Stat(c.volume.Original(id)); err != nil {
+		t.Errorf("original sumiu: %v", err)
+	}
+}
+
+// Original sumido do volume é problema de infraestrutura, não do vídeo: não
+// vira video_invalido.
+func TestProcessar_OriginalAusenteDevolve(t *testing.T) {
+	c := novoCenario(t)
+	id := c.videoRecebido(t, "recebido", time.Second)
+	if err := c.volume.ApagarOriginal(t.Context(), id); err != nil {
+		t.Fatal(err)
+	}
+
+	if r := c.processador(t, nil, nil).Processar(t.Context(), mensagem(id, "c")); r != mensageria.Devolver {
+		t.Errorf("resultado = %v, quero Devolver", r)
+	}
+	if s := c.status(t, id); s != "processando" {
+		t.Errorf("status = %s, quero processando", s)
+	}
 }

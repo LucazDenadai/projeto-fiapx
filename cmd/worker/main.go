@@ -72,6 +72,10 @@ func servir(ctx context.Context, log *slog.Logger) error {
 	if err != nil {
 		return err
 	}
+	duracaoMaxima, err := processo.Duracao("VIDEO_DURACAO_MAXIMA", processamento.DuracaoMaximaPadrao)
+	if err != nil {
+		return err
+	}
 	dados := processo.Variavel("DATA_DIR", "/data")
 	// Disco efêmero do container, nunca o volume (ADR-0005).
 	trabalho := processo.Variavel("TRABALHO_DIR", filepath.Join(os.TempDir(), "fiapx-worker"))
@@ -88,7 +92,12 @@ func servir(ctx context.Context, log *slog.Logger) error {
 
 	proc := processamento.NovoProcessador(pool, armazenamento.NovoVolume(dados),
 		extracao.Novo(extracao.Config{Timeout: timeoutFFmpeg}),
-		processamento.Config{DirTrabalho: trabalho, RetencaoZip: retencaoZip, TimeoutExtracao: timeoutFFmpeg}, log)
+		processamento.Config{
+			DirTrabalho:     trabalho,
+			RetencaoZip:     retencaoZip,
+			TimeoutExtracao: timeoutFFmpeg,
+			DuracaoMaxima:   duracaoMaxima,
+		}, log)
 	if err := proc.LimparTrabalho(ctx); err != nil {
 		return err
 	}
