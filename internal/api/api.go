@@ -33,6 +33,9 @@ type Config struct {
 	// padrões (500 MB e 10 min).
 	TamanhoMaxEnvio int64
 	TimeoutEnvio    time.Duration
+	// CotaVideos limita os Vídeos não terminais por Usuário (ADR-0011); zero
+	// ou negativo usa o padrão (5).
+	CotaVideos int
 }
 
 // Novo devolve o roteador público. Falha se a configuração estiver incompleta,
@@ -47,6 +50,9 @@ func Novo(cfg Config) (http.Handler, error) {
 	if cfg.TimeoutEnvio <= 0 {
 		cfg.TimeoutEnvio = TimeoutEnvioPadrao
 	}
+	if cfg.CotaVideos <= 0 {
+		cfg.CotaVideos = CotaVideosPadrao
+	}
 	servico, err := auth.NovoServico(auth.NovoRepositorio(cfg.Pool), cfg.SegredoJWT)
 	if err != nil {
 		return nil, fmt.Errorf("api: %w", err)
@@ -55,7 +61,7 @@ func Novo(cfg Config) (http.Handler, error) {
 		log:             cfg.Log,
 		auth:            servico,
 		tentativas:      cfg.Tentativas,
-		videos:          videos.NovoServico(cfg.Pool, armazenamento.NovoVolume(cfg.DirDados), cfg.Log),
+		videos:          videos.NovoServico(cfg.Pool, armazenamento.NovoVolume(cfg.DirDados), cfg.CotaVideos, cfg.Log),
 		tamanhoMaxEnvio: cfg.TamanhoMaxEnvio,
 		timeoutEnvio:    cfg.TimeoutEnvio,
 	}

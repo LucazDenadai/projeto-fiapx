@@ -2,6 +2,7 @@ package api_test
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -29,35 +30,61 @@ type arquivo struct {
 	conteudo    []byte
 }
 
-// enviar manda um multipart com os arquivos dados para POST /videos.
-func (c cliente) enviar(token string, arquivos ...arquivo) resposta {
-	c.t.Helper()
-	var corpo bytes.Buffer
-	w := multipart.NewWriter(&corpo)
+// multipartDe monta o corpo multipart com os arquivos dados e o seu tipo.
+func multipartDe(arquivos ...arquivo) (tipo string, corpo io.Reader) {
+	var b bytes.Buffer
+	w := multipart.NewWriter(&b)
 	for _, a := range arquivos {
-		parte, err := w.CreateFormFile(a.campo, a.nome)
-		if err != nil {
-			c.t.Fatalf("multipart: %v", err)
-		}
+		parte, _ := w.CreateFormFile(a.campo, a.nome) // só falha se b falhar
 		_, _ = parte.Write(a.conteudo)
 	}
 	_ = w.Close()
+	return w.FormDataContentType(), &b
+}
 
-	req, err := http.NewRequestWithContext(c.t.Context(), http.MethodPost, c.srv.URL+"/videos", &corpo)
+// novoEnvio monta um POST /videos autenticado.
+func novoEnvio(ctx context.Context, base, token, tipo string, corpo io.Reader) (*http.Request, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, base+"/videos", corpo)
 	if err != nil {
-		c.t.Fatalf("nova requisição: %v", err)
+		return nil, err
 	}
-	req.Header.Set("Content-Type", w.FormDataContentType())
+	req.Header.Set("Content-Type", tipo)
 	req.Header.Set("Authorization", "Bearer "+token)
-	res, err := c.srv.Client().Do(req)
+	return req, nil
+}
+
+// executar faz a requisição e lê a resposta; não chama t.Fatal, então serve
+// também em goroutines.
+func executar(cli *http.Client, req *http.Request) (resposta, error) {
+	res, err := cli.Do(req)
 	if err != nil {
-		c.t.Fatalf("POST /videos: %v", err)
+		return resposta{}, err
 	}
 	defer func() { _ = res.Body.Close() }()
 	r := resposta{status: res.StatusCode, header: res.Header}
 	b, _ := io.ReadAll(res.Body)
 	if len(b) > 0 {
 		_ = json.Unmarshal(b, &r.corpo)
+	}
+	return r, nil
+}
+
+// enviar manda um multipart com os arquivos dados para POST /videos.
+func (c cliente) enviar(token string, arquivos ...arquivo) resposta {
+	c.t.Helper()
+	tipo, corpo := multipartDe(arquivos...)
+	return c.enviarCorpo(token, tipo, corpo)
+}
+
+func (c cliente) enviarCorpo(token, tipo string, corpo io.Reader) resposta {
+	c.t.Helper()
+	req, err := novoEnvio(c.t.Context(), c.srv.URL, token, tipo, corpo)
+	if err != nil {
+		c.t.Fatalf("nova requisição: %v", err)
+	}
+	r, err := executar(c.srv.Client(), req)
+	if err != nil {
+		c.t.Fatalf("POST /videos: %v", err)
 	}
 	return r
 }
@@ -199,19 +226,8 @@ func TestEnvio_ParadoAlemDoPrazoDa408SemCriarNada(t *testing.T) {
 		_, _ = parte.Write(mp4(4096))
 	}()
 
-	req, err := http.NewRequestWithContext(t.Context(), http.MethodPost, c.srv.URL+"/videos", leitor)
-	if err != nil {
-		t.Fatalf("nova requisição: %v", err)
-	}
-	req.Header.Set("Content-Type", w.FormDataContentType())
-	req.Header.Set("Authorization", "Bearer "+token)
-	res, err := c.srv.Client().Do(req)
-	if err != nil {
-		t.Fatalf("POST /videos: %v", err)
-	}
-	_ = res.Body.Close()
-	if res.StatusCode != http.StatusRequestTimeout {
-		t.Fatalf("status = %d, quero 408", res.StatusCode)
+	if r := c.enviarCorpo(token, w.FormDataContentType(), leitor); r.status != http.StatusRequestTimeout {
+		t.Fatalf("status = %d, quero 408", r.status)
 	}
 	exigirNadaCriado(t, c, token)
 }
@@ -257,7 +273,7 @@ func TestListagem_SoDoDonoDoMaisRecenteParaOMaisAntigo(t *testing.T) {
 }
 
 func TestListagem_PaginaPorCursorSemRepetir(t *testing.T) {
-	c, _ := subirAPI(t)
+	c, _ := subirAPI(t, func(cfg *api.Config) { cfg.CotaVideos = 25 })
 	ana := c.usuario("ana@ex.com")
 	enviados := map[string]bool{}
 	for i := range 25 {

@@ -96,6 +96,10 @@ func servir(ctx context.Context, log *slog.Logger) error {
 	if err != nil {
 		return err
 	}
+	cota, err := processo.Inteiro("COTA_VIDEOS", api.CotaVideosPadrao)
+	if err != nil {
+		return err
+	}
 	timeoutEnvio, err := processo.Duracao("ENVIO_TIMEOUT", api.TimeoutEnvioPadrao)
 	if err != nil {
 		return err
@@ -118,6 +122,7 @@ func servir(ctx context.Context, log *slog.Logger) error {
 		DirDados:        dados,
 		TamanhoMaxEnvio: tamanhoMaxMB << 20,
 		TimeoutEnvio:    timeoutEnvio,
+		CotaVideos:      int(cota),
 	})
 	if err != nil {
 		return err

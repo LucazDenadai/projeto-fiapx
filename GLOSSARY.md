@@ -32,6 +32,10 @@ _Evitar_: erro, crash
 Código público que explica ao Usuário por que um Vídeo teve Falha definitiva (`video_invalido`, `video_muito_longo`, `sem_frames`, `tempo_excedido`, `erro_interno`). Nunca contém detalhe interno.
 _Evitar_: mensagem de erro, stack
 
+**Cota**:
+Máximo de Vídeos em andamento (recebido ou processando) que um Usuário pode ter ao mesmo tempo; o envio além dela é recusado. Vídeos concluídos ou falhos não contam.
+_Evitar_: limite de upload, quota
+
 **Notificação**:
 Aviso enviado ao Usuário, por e-mail, quando um Vídeo dele tem Falha definitiva. Diz o Motivo da falha; sucesso não gera Notificação.
 _Evitar_: alerta, mensagem

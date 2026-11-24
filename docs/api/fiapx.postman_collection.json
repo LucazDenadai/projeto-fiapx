@@ -158,7 +158,7 @@
             }
           ]
         },
-        "description": "Envia um Vídeo (`multipart/form-data`, campo `video`, um arquivo por requisição). O Processamento é assíncrono: acompanhe pelo `Location`.\n\n- `202` `{\"id\": \"...\", \"status\": \"recebido\"}` com `Location: /videos/{id}`.\n- `400` nenhum arquivo, mais de um arquivo ou campo diferente de `video`.\n- `401` sem token ou token inválido.\n- `413` arquivo acima do tamanho máximo (padrão 500 MB).\n- `415` o conteúdo não é vídeo (conferido pelos primeiros bytes, não pela extensão)."
+        "description": "Envia um Vídeo (`multipart/form-data`, campo `video`, um arquivo por requisição). O Processamento é assíncrono: acompanhe pelo `Location`.\n\n- `202` `{\"id\": \"...\", \"status\": \"recebido\"}` com `Location: /videos/{id}`.\n- `400` nenhum arquivo, mais de um arquivo ou campo diferente de `video`.\n- `401` sem token ou token inválido.\n- `413` arquivo acima do tamanho máximo (padrão 500 MB).\n- `415` o conteúdo não é vídeo (conferido pelos primeiros bytes, não pela extensão).\n- `429` o Usuário já tem 5 Vídeos em `recebido` ou `processando` (`COTA_VIDEOS`); envie outro quando um terminar."
       },
       "event": [
         {
