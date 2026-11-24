@@ -12,6 +12,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/LucazDenadai/projeto-fiapx/internal/auth"
+	"github.com/LucazDenadai/projeto-fiapx/internal/motivo"
 	"github.com/LucazDenadai/projeto-fiapx/internal/videos"
 )
 
@@ -186,7 +187,7 @@ func paraJSON(v videos.Video, agora time.Time) videoJSON {
 		AtualizadoEm: v.AtualizadoEm.UTC(),
 	}
 	if v.Status == videos.StatusFalhou {
-		j.Motivo, j.MotivoTexto = v.Motivo, videos.TextoMotivo[v.Motivo]
+		j.Motivo, j.MotivoTexto = v.Motivo, motivo.Texto(v.Motivo)
 	}
 	if v.ZipDisponivel(agora) {
 		expira := v.ZipExpiraEm.UTC()
@@ -308,7 +309,7 @@ func (a *aplicacao) baixar(w http.ResponseWriter, r *http.Request) {
 func responderNaoConcluido(w http.ResponseWriter, e *videos.ErroNaoConcluido) {
 	corpo := map[string]string{"erro": e.Error(), "status": e.Video.Status}
 	if e.Video.Status == videos.StatusFalhou {
-		corpo["motivo"], corpo["motivo_texto"] = e.Video.Motivo, videos.TextoMotivo[e.Video.Motivo]
+		corpo["motivo"], corpo["motivo_texto"] = e.Video.Motivo, motivo.Texto(e.Video.Motivo)
 	}
 	responderJSON(w, http.StatusConflict, corpo)
 }

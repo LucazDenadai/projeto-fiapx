@@ -25,6 +25,7 @@ import (
 	"github.com/LucazDenadai/projeto-fiapx/internal/outbox"
 	"github.com/LucazDenadai/projeto-fiapx/internal/processamento"
 	"github.com/LucazDenadai/projeto-fiapx/internal/processo"
+	"github.com/LucazDenadai/projeto-fiapx/internal/retentativa"
 )
 
 func main() {
@@ -82,11 +83,11 @@ func servir(ctx context.Context, log *slog.Logger) error {
 	if err != nil {
 		return err
 	}
-	backoffInicial, err := processo.Duracao("RETRY_BACKOFF_INICIAL", processamento.BackoffInicialPadrao)
+	backoffInicial, err := processo.Duracao("RETRY_BACKOFF_INICIAL", retentativa.InicialPadrao)
 	if err != nil {
 		return err
 	}
-	orcamentoRetry, err := processo.Duracao("RETRY_ORCAMENTO", processamento.OrcamentoRetryPadrao)
+	orcamentoRetry, err := processo.Duracao("RETRY_ORCAMENTO", retentativa.OrcamentoPadrao)
 	if err != nil {
 		return err
 	}
@@ -113,8 +114,7 @@ func servir(ctx context.Context, log *slog.Logger) error {
 			RetencaoZip:     retencaoZip,
 			TimeoutExtracao: timeoutFFmpeg,
 			DuracaoMaxima:   duracaoMaxima,
-			BackoffInicial:  backoffInicial,
-			OrcamentoRetry:  orcamentoRetry,
+			Retry:           retentativa.Politica{Inicial: backoffInicial, Orcamento: orcamentoRetry},
 		}, log)
 	if err := proc.LimparTrabalho(ctx); err != nil {
 		return err

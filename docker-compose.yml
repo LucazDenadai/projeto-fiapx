@@ -141,12 +141,34 @@ services:
       dockerfile: docker/notifier.Dockerfile
     environment:
       RABBITMQ_URL: *rabbitmq-url
+      # Notificação por e-mail (ADR-0008). No Compose, o Mailpit.
+      SMTP_ENDERECO: ${SMTP_ENDERECO:-mailpit:1025}
+      SMTP_REMETENTE: ${SMTP_REMETENTE:-nao-responda@fiapx.local}
+      SMTP_USUARIO: ${SMTP_USUARIO:-}
+      SMTP_SENHA: ${SMTP_SENHA:-}
+      SMTP_TIMEOUT: ${SMTP_TIMEOUT:-}
+      # Retry e DLQ (ADR-0004): mesmos valores da API e do Worker.
+      DELIVERY_LIMIT: ${DELIVERY_LIMIT:-}
+      RETRY_BACKOFF_INICIAL: ${RETRY_BACKOFF_INICIAL:-}
+      RETRY_ORCAMENTO: ${RETRY_ORCAMENTO:-}
     healthcheck:
       <<: *healthcheck
       test: ["CMD", "/notifier", "healthcheck"]
     depends_on:
       rabbitmq:
         condition: service_healthy
+      mailpit:
+        condition: service_healthy
+
+  # SMTP de desenvolvimento (ADR-0008): recebe os e-mails e os mostra em
+  # http://localhost:8025. O SMTP (1025) fica só na rede interna.
+  mailpit:
+    image: axllent/mailpit:v1.34
+    ports:
+      - "${MAILPIT_PORT:-8025}:8025"
+    healthcheck:
+      <<: *healthcheck
+      test: ["CMD", "/mailpit", "readyz"]
 
 volumes:
   postgres:
