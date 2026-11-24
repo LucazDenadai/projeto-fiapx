@@ -31,6 +31,8 @@ type Config struct {
 	Lote              int           // linhas por rodada (padrão 100)
 	BackoffMax        time.Duration // teto da espera após falha (padrão 30 s)
 	TimeoutPublicacao time.Duration // por mensagem (padrão 10 s)
+	// Topologia declarada pelo publicador ao conectar (ADR-0004).
+	Topologia mensageria.Topologia
 }
 
 func (c Config) comPadroes() Config {
@@ -68,7 +70,7 @@ func NovoRelay(pool *pgxpool.Pool, pub Publicador, cfg Config, log *slog.Logger)
 // o põe para rodar. A função devolvida para o relay, espera e fecha a
 // conexão; chame-a antes de fechar o pool.
 func Subir(ctx context.Context, pool *pgxpool.Pool, amqpURL string, cfg Config, log *slog.Logger) (parar func()) {
-	pub := mensageria.NovoPublicador(amqpURL)
+	pub := mensageria.NovoPublicador(amqpURL, cfg.Topologia)
 	ctx, cancelar := context.WithCancel(ctx)
 	esperar := NovoRelay(pool, pub, cfg, log).Iniciar(ctx)
 	return func() {

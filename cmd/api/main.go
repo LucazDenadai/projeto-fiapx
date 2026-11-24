@@ -109,6 +109,11 @@ func servir(ctx context.Context, log *slog.Logger) error {
 	if err != nil {
 		return err
 	}
+	// O mesmo valor no Worker: quem conectar primeiro cria as filas (ADR-0004).
+	limiteEntregas, err := processo.Inteiro("DELIVERY_LIMIT", mensageria.LimiteEntregasPadrao)
+	if err != nil {
+		return err
+	}
 
 	pool, err := banco.Abrir(ctx, dbURL)
 	if err != nil {
@@ -117,7 +122,10 @@ func servir(ctx context.Context, log *slog.Logger) error {
 	defer pool.Close()
 
 	// Relay da outbox (ADR-0003): publica as mensagens de Processamento dos Vídeos aceitos.
-	pararRelay := outbox.Subir(ctx, pool, amqpURL, outbox.Config{Intervalo: intervaloOutbox}, log)
+	pararRelay := outbox.Subir(ctx, pool, amqpURL, outbox.Config{
+		Intervalo: intervaloOutbox,
+		Topologia: mensageria.Topologia{LimiteEntregas: int(limiteEntregas)},
+	}, log)
 	defer pararRelay()
 
 	tentativas := limite.Novo(opcoesRedis, cfgLimite, log)

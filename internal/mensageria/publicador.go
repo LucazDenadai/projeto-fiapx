@@ -21,6 +21,7 @@ var (
 // topologia. Uma publicação por vez.
 type Publicador struct {
 	url string
+	top Topologia
 
 	mu       sync.Mutex
 	conn     *amqp.Connection
@@ -28,9 +29,10 @@ type Publicador struct {
 	retornos chan amqp.Return
 }
 
-// NovoPublicador não conecta; a conexão abre em Conectar ou Publicar.
-func NovoPublicador(url string) *Publicador {
-	return &Publicador{url: url}
+// NovoPublicador não conecta; a conexão abre em Conectar ou Publicar, e
+// declara a topologia com os valores de top.
+func NovoPublicador(url string, top Topologia) *Publicador {
+	return &Publicador{url: url, top: top}
 }
 
 // Conectar garante a conexão, com a topologia declarada.
@@ -54,7 +56,7 @@ func (p *Publicador) conectar(ctx context.Context) error {
 		err = ch.Confirm(false)
 	}
 	if err == nil {
-		err = declararTopologia(ch)
+		err = declararTopologia(ch, p.top)
 	}
 	if err != nil {
 		_ = conn.Close()

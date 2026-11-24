@@ -29,7 +29,7 @@ var cfgTeste = outbox.Config{
 
 func novoRelay(t *testing.T, pool *pgxpool.Pool, url string) *outbox.Relay {
 	t.Helper()
-	pub := mensageria.NovoPublicador(url)
+	pub := mensageria.NovoPublicador(url, mensageria.Topologia{})
 	t.Cleanup(pub.Fechar)
 	return outbox.NovoRelay(pool, pub, cfgTeste, slog.New(slog.DiscardHandler))
 }

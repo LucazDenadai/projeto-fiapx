@@ -1,5 +1,6 @@
 // Comando worker: consome a fila processamento (extrai os frames e publica o
-// Zip de frames), roda o relay da outbox e expõe a porta interna de saúde.
+// Zip de frames) e a processamento.dlq (Falha definitiva das tentativas
+// esgotadas), roda o relay da outbox e expõe a porta interna de saúde.
 //
 //	worker              sobe o Worker
 //	worker healthcheck  sonda o próprio /readyz (healthcheck do Compose)
@@ -76,6 +77,21 @@ func servir(ctx context.Context, log *slog.Logger) error {
 	if err != nil {
 		return err
 	}
+	// Retry e DLQ (ADR-0004). DELIVERY_LIMIT tem de ser o mesmo da API.
+	limiteEntregas, err := processo.Inteiro("DELIVERY_LIMIT", mensageria.LimiteEntregasPadrao)
+	if err != nil {
+		return err
+	}
+	backoffInicial, err := processo.Duracao("RETRY_BACKOFF_INICIAL", processamento.BackoffInicialPadrao)
+	if err != nil {
+		return err
+	}
+	orcamentoRetry, err := processo.Duracao("RETRY_ORCAMENTO", processamento.OrcamentoRetryPadrao)
+	if err != nil {
+		return err
+	}
+	topologia := mensageria.Topologia{LimiteEntregas: int(limiteEntregas)}
+	avisarConsumerTimeout(log, timeoutFFmpeg, orcamentoRetry)
 	dados := processo.Variavel("DATA_DIR", "/data")
 	// Disco efêmero do container, nunca o volume (ADR-0005).
 	trabalho := processo.Variavel("TRABALHO_DIR", filepath.Join(os.TempDir(), "fiapx-worker"))
@@ -87,7 +103,7 @@ func servir(ctx context.Context, log *slog.Logger) error {
 	defer pool.Close()
 
 	// Relay da outbox (ADR-0003): publica os eventos que o Worker grava.
-	pararRelay := outbox.Subir(ctx, pool, amqpURL, outbox.Config{Intervalo: intervaloOutbox}, log)
+	pararRelay := outbox.Subir(ctx, pool, amqpURL, outbox.Config{Intervalo: intervaloOutbox, Topologia: topologia}, log)
 	defer pararRelay()
 
 	proc := processamento.NovoProcessador(pool, armazenamento.NovoVolume(dados),
@@ -97,6 +113,8 @@ func servir(ctx context.Context, log *slog.Logger) error {
 			RetencaoZip:     retencaoZip,
 			TimeoutExtracao: timeoutFFmpeg,
 			DuracaoMaxima:   duracaoMaxima,
+			BackoffInicial:  backoffInicial,
+			OrcamentoRetry:  orcamentoRetry,
 		}, log)
 	if err := proc.LimparTrabalho(ctx); err != nil {
 		return err
@@ -105,9 +123,18 @@ func servir(ctx context.Context, log *slog.Logger) error {
 	var consumo sync.WaitGroup
 	consumo.Go(func() {
 		mensageria.Consumir(ctxConsumo, amqpURL, mensageria.ConfigConsumo{
-			Fila:     mensageria.FilaProcessamento,
-			Prefetch: int(prefetch),
+			Fila:      mensageria.FilaProcessamento,
+			Prefetch:  int(prefetch),
+			Topologia: topologia,
 		}, proc.Processar, log)
+	})
+	// Consumidor da DLQ: fecha a Falha definitiva das mensagens que esgotaram
+	// as entregas (ADR-0004).
+	consumo.Go(func() {
+		mensageria.Consumir(ctxConsumo, amqpURL, mensageria.ConfigConsumo{
+			Fila:      mensageria.DLQ(mensageria.FilaProcessamento),
+			Topologia: topologia,
+		}, proc.ProcessarDLQ, log)
 	})
 	// Para de consumir e espera os Processamentos em andamento antes de
 	// parar o relay e fechar o pool.
@@ -122,4 +149,19 @@ func servir(ctx context.Context, log *slog.Logger) error {
 		observabilidade.Dependencia{Nome: "volume", Verificar: armazenamento.Verificacao(dados)},
 	)
 	return processo.Servir(ctx, log, interno)
+}
+
+// consumerTimeoutRabbitMQ é o padrão do broker: uma mensagem sem ack por mais
+// tempo que isso fecha o canal e conta uma entrega espúria.
+const consumerTimeoutRabbitMQ = 30 * time.Minute
+
+// avisarConsumerTimeout avisa se, no pior caso, um Processamento passa do
+// consumer_timeout: o ffmpeg mais o orçamento de cada operação de
+// infraestrutura com retry antes de responder (ler original, iniciar,
+// publicar zip, concluir ou registrar a falha) (ADR-0004).
+func avisarConsumerTimeout(log *slog.Logger, timeoutFFmpeg, orcamento time.Duration) {
+	if pior := timeoutFFmpeg + 4*orcamento; pior >= consumerTimeoutRabbitMQ {
+		log.Warn("FFMPEG_TIMEOUT + 4×RETRY_ORCAMENTO passa do consumer_timeout do RabbitMQ; o broker pode derrubar o canal no meio de um Processamento",
+			"pior_caso", pior.String(), "consumer_timeout", consumerTimeoutRabbitMQ.String())
+	}
 }

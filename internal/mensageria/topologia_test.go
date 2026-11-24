@@ -2,6 +2,7 @@ package mensageria_test
 
 import (
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -48,7 +49,7 @@ func receber(t *testing.T, ch *amqp.Channel, fila string) amqp.Delivery {
 func conectado(t *testing.T) string {
 	t.Helper()
 	url := integracao.RabbitMQ(t)
-	pub := mensageria.NovoPublicador(url)
+	pub := mensageria.NovoPublicador(url, mensageria.Topologia{})
 	t.Cleanup(pub.Fechar)
 	if err := pub.Conectar(t.Context()); err != nil {
 		t.Fatalf("conectar publicador: %v", err)
@@ -118,10 +119,59 @@ func TestTopologia_ExcedeuEntregasVaiParaDLQ(t *testing.T) {
 
 func TestPublicador_MensagemSemRotaDaErro(t *testing.T) {
 	url := integracao.RabbitMQ(t)
-	pub := mensageria.NovoPublicador(url)
+	pub := mensageria.NovoPublicador(url, mensageria.Topologia{})
 	t.Cleanup(pub.Fechar)
 	err := pub.Publicar(t.Context(), "", "fila-que-nao-existe", "1", []byte("x"))
 	if !errors.Is(err, mensageria.ErrSemRota) {
 		t.Fatalf("erro = %v, quero ErrSemRota (mandatory)", err)
+	}
+}
+
+// O delivery-limit vem da configuração (ADR-0004): no teste, 2.
+func TestTopologia_LimiteConfiguravel(t *testing.T) {
+	url := integracao.RabbitMQ(t)
+	pub := mensageria.NovoPublicador(url, mensageria.Topologia{LimiteEntregas: 2})
+	t.Cleanup(pub.Fechar)
+	if err := pub.Conectar(t.Context()); err != nil {
+		t.Fatalf("conectar: %v", err)
+	}
+	ch := canal(t, url)
+	if err := ch.PublishWithContext(t.Context(), "", "processamento", true, false, amqp.Publishing{Body: []byte("job")}); err != nil {
+		t.Fatalf("publicar: %v", err)
+	}
+
+	entregas := 0
+	for range 50 {
+		d, ok, err := ch.Get("processamento", false)
+		if err != nil {
+			t.Fatalf("get: %v", err)
+		}
+		if !ok {
+			if entregas > 0 {
+				break
+			}
+			time.Sleep(100 * time.Millisecond)
+			continue
+		}
+		entregas++
+		_ = d.Nack(false, true)
+		time.Sleep(50 * time.Millisecond)
+	}
+	if entregas < 2 || entregas > 3 {
+		t.Errorf("entregas antes da DLQ = %d, quero 2 (limite) ou 3", entregas)
+	}
+	receber(t, ch, "processamento.dlq")
+}
+
+// Mudar o limite com as filas já criadas não tem como valer: o broker recusa,
+// e o erro diz o que fazer.
+func TestTopologia_LimiteDiferenteDaFilaExistenteExplica(t *testing.T) {
+	url := conectado(t) // filas criadas com o padrão, 5
+	pub := mensageria.NovoPublicador(url, mensageria.Topologia{LimiteEntregas: 2})
+	t.Cleanup(pub.Fechar)
+
+	err := pub.Conectar(t.Context())
+	if err == nil || !strings.Contains(err.Error(), "delivery-limit") || !strings.Contains(err.Error(), "recrie as filas") {
+		t.Errorf("erro = %v, quero a explicação do delivery-limit diferente", err)
 	}
 }

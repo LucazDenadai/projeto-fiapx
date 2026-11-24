@@ -254,7 +254,9 @@ func TestProcessar_QuedaAntesDoCommitDevolveEReentregaRefaz(t *testing.T) {
 	id := c.videoRecebido(t, "recebido", 3*time.Second)
 	msg := mensagem(id, "c")
 
-	r := c.processador(t, zipQueCai{c.volume}, nil).Processar(t.Context(), msg)
+	// Orçamento curto: a queda se repete em toda nova tentativa.
+	semRetry := processamento.Config{OrcamentoRetry: time.Millisecond}
+	r := c.processadorCom(t, zipQueCai{c.volume}, nil, semRetry, slog.New(slog.DiscardHandler)).Processar(t.Context(), msg)
 	if r != mensageria.Devolver {
 		t.Fatalf("resultado com queda = %v, quero Devolver (sem ack)", r)
 	}
@@ -588,7 +590,8 @@ func TestProcessar_OriginalAusenteDevolve(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if r := c.processador(t, nil, nil).Processar(t.Context(), mensagem(id, "c")); r != mensageria.Devolver {
+	semRetry := processamento.Config{OrcamentoRetry: time.Millisecond}
+	if r := c.processadorCom(t, nil, nil, semRetry, slog.New(slog.DiscardHandler)).Processar(t.Context(), mensagem(id, "c")); r != mensageria.Devolver {
 		t.Errorf("resultado = %v, quero Devolver", r)
 	}
 	if s := c.status(t, id); s != "processando" {
