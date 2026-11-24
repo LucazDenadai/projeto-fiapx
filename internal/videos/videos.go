@@ -21,6 +21,7 @@ var (
 	ErrNaoEhVideo     = errors.New("o arquivo não é um vídeo em formato aceito")
 	ErrNaoEncontrado  = errors.New("vídeo não encontrado")
 	ErrCursorInvalido = errors.New("cursor inválido")
+	ErrCotaExcedida   = errors.New("você já tem o máximo de vídeos em processamento; envie outro quando um terminar")
 )
 
 // Status do Vídeo (ADR-0014).
@@ -52,12 +53,27 @@ type Armazenamento interface {
 type Servico struct {
 	repo repositorio
 	arqs Armazenamento
+	cota int
 	log  *slog.Logger
 }
 
-// NovoServico monta o serviço sobre o Postgres e o volume.
-func NovoServico(pool *pgxpool.Pool, arqs Armazenamento, log *slog.Logger) *Servico {
-	return &Servico{repo: repositorio{pool: pool}, arqs: arqs, log: log}
+// NovoServico monta o serviço sobre o Postgres e o volume. cota é o máximo de
+// Vídeos não terminais por Usuário (ADR-0011).
+func NovoServico(pool *pgxpool.Pool, arqs Armazenamento, cota int, log *slog.Logger) *Servico {
+	return &Servico{repo: repositorio{pool: pool}, arqs: arqs, cota: cota, log: log}
+}
+
+// ConferirCota recusa com ErrCotaExcedida, antes de gravar o arquivo, o envio
+// de quem já está na cota. É a checagem barata; a que vale é a de Aceitar.
+func (s *Servico) ConferirCota(ctx context.Context, usuarioID uuid.UUID) error {
+	n, err := s.repo.emAndamento(ctx, s.repo.pool, usuarioID)
+	if err != nil {
+		return fmt.Errorf("conferir cota: %w", err)
+	}
+	if n >= s.cota {
+		return ErrCotaExcedida
+	}
+	return nil
 }
 
 // Recebido é um original já gravado no volume, ainda sem Vídeo no banco.
@@ -94,10 +110,12 @@ func (s *Servico) Descartar(ctx context.Context, r Recebido) {
 }
 
 // Aceitar cria o Vídeo recebido e a linha da outbox na mesma transação
-// (ADR-0003). Se falhar, o original é descartado.
+// (ADR-0003), conferindo de novo a cota com a linha do Usuário travada, para
+// que envios simultâneos não passem juntos. Se falhar, inclusive com
+// ErrCotaExcedida, o original é descartado.
 func (s *Servico) Aceitar(ctx context.Context, usuarioID uuid.UUID, r Recebido) (Video, error) {
 	correlationID := uuid.New()
-	v, err := s.repo.criar(ctx, usuarioID, r.id, r.nome, correlationID)
+	v, err := s.repo.criar(ctx, usuarioID, r.id, r.nome, correlationID, s.cota)
 	if err != nil {
 		s.Descartar(ctx, r)
 		return Video{}, fmt.Errorf("aceitar vídeo: %w", err)

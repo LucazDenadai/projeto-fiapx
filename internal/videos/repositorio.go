@@ -33,14 +33,39 @@ func escanear(row pgx.Row) (Video, error) {
 	return v, err
 }
 
-func (r *repositorio) criar(ctx context.Context, usuarioID, id uuid.UUID, nome string, correlationID uuid.UUID) (Video, error) {
+// consultor é o pool ou uma transação.
+type consultor interface {
+	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
+}
+
+// emAndamento conta os Vídeos não terminais do Usuário.
+func (r *repositorio) emAndamento(ctx context.Context, q consultor, usuarioID uuid.UUID) (int, error) {
+	var n int
+	err := q.QueryRow(ctx, `SELECT count(*) FROM videos WHERE usuario_id = $1 AND status IN ($2, $3)`,
+		usuarioID, StatusRecebido, StatusProcessando).Scan(&n)
+	return n, err
+}
+
+// criar insere o Vídeo e a linha da outbox se o Usuário estiver abaixo da
+// cota. A linha do Usuário fica travada até o fim da transação, o que
+// serializa os envios simultâneos dele.
+func (r *repositorio) criar(ctx context.Context, usuarioID, id uuid.UUID, nome string, correlationID uuid.UUID, cota int) (Video, error) {
 	payload, err := json.Marshal(map[string]string{"video_id": id.String(), "correlation_id": correlationID.String()})
 	if err != nil {
 		return Video{}, fmt.Errorf("montar mensagem do job: %w", err)
 	}
 	var v Video
 	err = pgx.BeginFunc(ctx, r.pool, func(tx pgx.Tx) error {
-		var err error
+		if _, err := tx.Exec(ctx, `SELECT 1 FROM usuarios WHERE id = $1 FOR UPDATE`, usuarioID); err != nil {
+			return fmt.Errorf("travar usuário: %w", err)
+		}
+		n, err := r.emAndamento(ctx, tx, usuarioID)
+		if err != nil {
+			return fmt.Errorf("contar vídeos em andamento: %w", err)
+		}
+		if n >= cota {
+			return ErrCotaExcedida
+		}
 		v, err = escanear(tx.QueryRow(ctx, `INSERT INTO videos (id, usuario_id, nome_original, status)
 			VALUES ($1, $2, $3, $4) RETURNING `+colunas, id, usuarioID, nome, StatusRecebido))
 		if err != nil {

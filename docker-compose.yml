@@ -82,6 +82,7 @@ services:
       # Envio de Vídeo (ADR-0011). Vazio: 500 MB e 10 min
       ENVIO_TAMANHO_MAX_MB: ${ENVIO_TAMANHO_MAX_MB:-}
       ENVIO_TIMEOUT: ${ENVIO_TIMEOUT:-}
+      COTA_VIDEOS: ${COTA_VIDEOS:-}
     volumes:
       - dados:/data
     healthcheck:

@@ -19,6 +19,7 @@ import (
 const (
 	TamanhoMaxEnvioPadrao = 500 << 20
 	TimeoutEnvioPadrao    = 10 * time.Minute
+	CotaVideosPadrao      = 5
 
 	limitePadrao = 20
 	limiteMax    = 100
@@ -60,6 +61,14 @@ func (a *aplicacao) enviar(w http.ResponseWriter, r *http.Request) {
 	usuarioID, ok := usuarioDe(r)
 	if !ok {
 		responderErro(w, http.StatusUnauthorized, "token inválido")
+		return
+	}
+	// Recusa barata: quem está na cota não chega a gravar arquivo.
+	if err := a.videos.ConferirCota(r.Context(), usuarioID); err != nil {
+		// O corpo não é lido: sem fechar a conexão, um envio grande faria o
+		// cliente ver um reset em vez do 429.
+		w.Header().Set("Connection", "close")
+		a.recusarEnvio(w, r, err)
 		return
 	}
 	// Só esta rota tem prazo de leitura longo; o resto do servidor segue curto.
@@ -116,11 +125,20 @@ func (a *aplicacao) enviar(w http.ResponseWriter, r *http.Request) {
 
 	v, err := a.videos.Aceitar(r.Context(), usuarioID, *recebido)
 	if err != nil {
-		a.erroInterno(w, r, err)
+		a.recusarEnvio(w, r, err)
 		return
 	}
 	w.Header().Set("Location", "/videos/"+v.ID.String())
 	responderJSON(w, http.StatusAccepted, map[string]string{"id": v.ID.String(), "status": v.Status})
+}
+
+// recusarEnvio responde 429 à cota excedida e 500 ao resto.
+func (a *aplicacao) recusarEnvio(w http.ResponseWriter, r *http.Request, err error) {
+	if errors.Is(err, videos.ErrCotaExcedida) {
+		responderErro(w, http.StatusTooManyRequests, videos.ErrCotaExcedida.Error())
+		return
+	}
+	a.erroInterno(w, r, err)
 }
 
 // falhaDeLeitura traduz o erro de leitura do envio em status e mensagem pública.
