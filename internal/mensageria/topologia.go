@@ -12,6 +12,7 @@ const (
 	FilaNotificacao   = "notificacao"
 	ExchangeEventos   = "processamento.eventos"
 	EventoFalhou      = "falhou"
+	EventoConcluido   = "concluido" // sem assinante por enquanto
 
 	// LimiteEntregas é o delivery-limit das filas de trabalho; passado dele,
 	// a mensagem vai para a DLQ.
