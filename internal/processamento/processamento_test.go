@@ -423,6 +423,14 @@ func TestProcessar_FalhaPermanente(t *testing.T) {
 			motivo:   "video_muito_longo",
 		},
 		{
+			// Sem duração no contêiner, a contagem de frames (1 por segundo)
+			// faz a conferência.
+			nome:     "acima da duração máxima, sem duração no contêiner",
+			original: func(t *testing.T) string { return integracao.VideoSemDuracao(t, 5*time.Second) },
+			cfg:      processamento.Config{DuracaoMaxima: 2 * time.Second},
+			motivo:   "video_muito_longo",
+		},
+		{
 			// Com 1 frame por segundo, menos de meio segundo não dá frame
 			// nenhum, e o ffmpeg sai sem erro.
 			nome:     "sem frames",
@@ -479,6 +487,18 @@ func TestProcessar_FalhaPermanente(t *testing.T) {
 			}
 			c.trabalhoVazio(t)
 		})
+	}
+}
+
+func TestProcessar_SemDuracaoNoContainerConclui(t *testing.T) {
+	c := novoCenario(t)
+	id := c.videoComOriginal(t, "recebido", integracao.VideoSemDuracao(t, 3*time.Second))
+
+	if r := c.processador(t, nil, nil).Processar(t.Context(), mensagem(id, "c")); r != mensageria.Confirmar {
+		t.Fatalf("resultado = %v, quero Confirmar", r)
+	}
+	if s := c.status(t, id); s != "concluido" {
+		t.Errorf("status = %s, quero concluido", s)
 	}
 }
 

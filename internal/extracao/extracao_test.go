@@ -124,6 +124,30 @@ func TestSondar_SemStreamDeVideoEhInvalido(t *testing.T) {
 	}
 }
 
+// Contêiner sem duração no cabeçalho é vídeo válido: a duração fica zero
+// (desconhecida), e quem decide é o Processamento.
+func TestSondar_DuracaoDesconhecidaNaoEhInvalida(t *testing.T) {
+	s, err := extracao.Novo(extracao.Config{}).Sondar(t.Context(), integracao.VideoSemDuracao(t, 2*time.Second))
+	if err != nil {
+		t.Fatalf("sondar: %v", err)
+	}
+	if s.Duracao != 0 {
+		t.Errorf("duração = %v, quero 0 (desconhecida)", s.Duracao)
+	}
+}
+
+// Se o ffmpeg falha porque não consegue gravar os frames, o problema é do
+// disco do Worker, não do vídeo.
+func TestExtrairFrames_DiretorioInutilizavelNaoEhInvalido(t *testing.T) {
+	video := integracao.Video(t, time.Second)
+	sumiu := filepath.Join(t.TempDir(), "sumiu")
+
+	_, err := extracao.Novo(extracao.Config{}).ExtrairFrames(t.Context(), video, sumiu)
+	if err == nil || errors.Is(err, extracao.ErrVideoInvalido) {
+		t.Errorf("erro = %v, quero erro que não seja ErrVideoInvalido", err)
+	}
+}
+
 // Original sumido é problema do volume: o Processamento tenta de novo.
 func TestSondar_ArquivoAusenteNaoEhInvalido(t *testing.T) {
 	integracao.ExigirFFmpeg(t)

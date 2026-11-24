@@ -65,7 +65,7 @@ func Novo(cfg Config) *Extrator {
 
 // Sonda é o que o ffprobe diz do arquivo.
 type Sonda struct {
-	Duracao time.Duration
+	Duracao time.Duration // zero: o contêiner não informa
 }
 
 // ErrVideoInvalido: o ffprobe ou o ffmpeg não conseguem ler o arquivo como
@@ -110,10 +110,11 @@ func (e *Extrator) Sondar(ctx context.Context, arquivo string) (Sonda, error) {
 	if len(r.Streams) == 0 {
 		return Sonda{}, ErrSemVideo
 	}
-	// Sem duração legível não dá para conferir a duração máxima (ADR-0011).
+	// Contêiner gravado em fluxo (Matroska/WebM de gravadores ao vivo) não
+	// informa a duração: o vídeo é válido, e ela fica zero (desconhecida).
 	segundos, err := strconv.ParseFloat(r.Format.Duration, 64)
 	if err != nil || segundos < 0 {
-		return Sonda{}, fmt.Errorf("%w: duração %q no ffprobe", ErrVideoInvalido, r.Format.Duration)
+		return Sonda{}, nil
 	}
 	return Sonda{Duracao: time.Duration(segundos * float64(time.Second))}, nil
 }
@@ -131,6 +132,14 @@ func (e *Extrator) ExtrairFrames(ctx context.Context, arquivo, dir string) ([]st
 		"file:"+filepath.Join(dir, prefixoFrame+"%05d"+extensao),
 	)
 	if _, err := e.rodar(ctx, e.cfg.FFmpeg, args...); err != nil {
+		// O ffmpeg sai com erro tanto ao não decodificar o vídeo quanto ao
+		// não gravar os frames. Se dir não aceita escrita, a culpa é do disco
+		// do Worker: erro transitório, sem ErrVideoInvalido (ADR-0004).
+		if errors.Is(err, ErrVideoInvalido) {
+			if errDir := conferirEscrita(dir); errDir != nil {
+				return nil, fmt.Errorf("ffmpeg: diretório de frames inutilizável: %w (%v)", errDir, err) //nolint:errorlint // ErrVideoInvalido fica fora da cadeia de propósito
+			}
+		}
 		return nil, fmt.Errorf("ffmpeg: %w", err)
 	}
 	entradas, err := os.ReadDir(dir)
@@ -146,6 +155,18 @@ func (e *Extrator) ExtrairFrames(ctx context.Context, arquivo, dir string) ([]st
 	}
 	slices.Sort(frames) // o número tem largura fixa: ordem de nome é ordem de tempo
 	return frames, nil
+}
+
+// conferirEscrita grava e apaga um arquivo pequeno em dir.
+func conferirEscrita(dir string) error {
+	f, err := os.CreateTemp(dir, ".escrita-*")
+	if err != nil {
+		return err
+	}
+	_, errEscrita := f.Write([]byte{0})
+	errFechar := f.Close()
+	errApagar := os.Remove(f.Name())
+	return errors.Join(errEscrita, errFechar, errApagar)
 }
 
 // tamMaxErro é quanto da saída de erro do processo vai para a mensagem de

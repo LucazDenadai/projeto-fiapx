@@ -154,8 +154,9 @@ func (p *Processador) Processar(ctx context.Context, corpo []byte) mensageria.Re
 	return mensageria.Confirmar
 }
 
-// falhaPermanente é um erro do próprio vídeo: tentar de novo dá o mesmo
-// resultado. motivo é o código público; err, o detalhe que só vai ao log.
+// falhaPermanente é um erro permanente do ADR-0004, do próprio vídeo: tentar
+// de novo dá o mesmo resultado, então ele vira Falha definitiva na hora.
+// motivo é o código público; err, o detalhe que só vai ao log.
 type falhaPermanente struct {
 	motivo string
 	err    error
@@ -235,8 +236,7 @@ func (p *Processador) extrair(ctx context.Context, original, dir string) ([]stri
 		return nil, classificar(ctx, err)
 	}
 	if sonda.Duracao > p.cfg.DuracaoMaxima {
-		return nil, &falhaPermanente{videos.MotivoVideoMuitoLongo,
-			fmt.Errorf("duração %v acima da máxima %v", sonda.Duracao, p.cfg.DuracaoMaxima)}
+		return nil, muitoLongo(fmt.Sprintf("duração %v", sonda.Duracao), p.cfg.DuracaoMaxima)
 	}
 	frames, err := p.ext.ExtrairFrames(ctxExtracao, original, dir)
 	if err != nil {
@@ -245,7 +245,16 @@ func (p *Processador) extrair(ctx context.Context, original, dir string) ([]stri
 	if len(frames) == 0 {
 		return nil, &falhaPermanente{videos.MotivoSemFrames, errors.New("o ffmpeg não extraiu nenhum frame")}
 	}
+	// Quando o contêiner não informa a duração, a sonda não barra: com 1
+	// frame por segundo, a contagem confere (um a mais pelo arredondamento).
+	if maximo := int(p.cfg.DuracaoMaxima/time.Second) + 1; len(frames) > maximo {
+		return nil, muitoLongo(fmt.Sprintf("%d frames", len(frames)), p.cfg.DuracaoMaxima)
+	}
 	return frames, nil
+}
+
+func muitoLongo(medida string, maxima time.Duration) *falhaPermanente {
+	return &falhaPermanente{videos.MotivoVideoMuitoLongo, fmt.Errorf("%s acima da duração máxima %v", medida, maxima)}
 }
 
 // classificar separa os erros permanentes do ffprobe e do ffmpeg (ADR-0004).
