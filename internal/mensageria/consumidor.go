@@ -20,6 +20,9 @@ const (
 	// Devolver dá nack com requeue: a mensagem volta para a fila e a entrega
 	// conta no delivery-limit (ADR-0004).
 	Devolver
+	// Rejeitar dá nack sem requeue: a mensagem vai direto para a DLQ da fila.
+	// Para a mensagem que nunca vai dar certo, guardada para inspeção.
+	Rejeitar
 )
 
 // Tratador processa o corpo de uma mensagem. O ctx é cancelado quando o
@@ -109,9 +112,12 @@ func consumirConexao(ctx context.Context, url string, cfg ConfigConsumo, tratar 
 
 func responder(ctx context.Context, d amqp.Delivery, r Resultado, fila string, log *slog.Logger) {
 	var err error
-	if r == Confirmar {
+	switch r {
+	case Confirmar:
 		err = d.Ack(false)
-	} else {
+	case Rejeitar:
+		err = d.Nack(false, false)
+	default:
 		err = d.Nack(false, true)
 	}
 	if err != nil {

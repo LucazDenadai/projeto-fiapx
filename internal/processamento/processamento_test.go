@@ -22,6 +22,7 @@ import (
 	"github.com/LucazDenadai/projeto-fiapx/internal/integracao"
 	"github.com/LucazDenadai/projeto-fiapx/internal/mensageria"
 	"github.com/LucazDenadai/projeto-fiapx/internal/processamento"
+	"github.com/LucazDenadai/projeto-fiapx/internal/retentativa"
 )
 
 func TestMain(m *testing.M) { integracao.Principal(m) }
@@ -255,7 +256,7 @@ func TestProcessar_QuedaAntesDoCommitDevolveEReentregaRefaz(t *testing.T) {
 	msg := mensagem(id, "c")
 
 	// Orçamento curto: a queda se repete em toda nova tentativa.
-	semRetry := processamento.Config{OrcamentoRetry: time.Millisecond}
+	semRetry := processamento.Config{Retry: retentativa.Politica{Orcamento: time.Millisecond}}
 	r := c.processadorCom(t, zipQueCai{c.volume}, nil, semRetry, slog.New(slog.DiscardHandler)).Processar(t.Context(), msg)
 	if r != mensageria.Devolver {
 		t.Fatalf("resultado com queda = %v, quero Devolver (sem ack)", r)
@@ -590,7 +591,7 @@ func TestProcessar_OriginalAusenteDevolve(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	semRetry := processamento.Config{OrcamentoRetry: time.Millisecond}
+	semRetry := processamento.Config{Retry: retentativa.Politica{Orcamento: time.Millisecond}}
 	if r := c.processadorCom(t, nil, nil, semRetry, slog.New(slog.DiscardHandler)).Processar(t.Context(), mensagem(id, "c")); r != mensageria.Devolver {
 		t.Errorf("resultado = %v, quero Devolver", r)
 	}

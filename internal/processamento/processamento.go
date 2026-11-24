@@ -21,20 +21,13 @@ import (
 
 	"github.com/LucazDenadai/projeto-fiapx/internal/extracao"
 	"github.com/LucazDenadai/projeto-fiapx/internal/mensageria"
-	"github.com/LucazDenadai/projeto-fiapx/internal/videos"
+	"github.com/LucazDenadai/projeto-fiapx/internal/motivo"
+	"github.com/LucazDenadai/projeto-fiapx/internal/retentativa"
 )
 
 // RetencaoZipPadrao é por quanto tempo o Zip de frames fica disponível depois
 // de concluído (ADR-0015).
 const RetencaoZipPadrao = 7 * 24 * time.Hour
-
-// Retry das operações de infraestrutura dentro do Worker (ADR-0004): 1, 2,
-// 4, 8, 16 s… até o orçamento. Somado ao timeout do ffmpeg, tem de ficar
-// abaixo do consumer_timeout do RabbitMQ (30 min).
-const (
-	BackoffInicialPadrao = time.Second
-	OrcamentoRetryPadrao = time.Minute
-)
 
 // DuracaoMaximaPadrao é a maior duração de Vídeo que o Worker extrai: até 600
 // frames (ADR-0011).
@@ -65,11 +58,11 @@ type Config struct {
 	// DuracaoMaxima acima da qual o Vídeo falha com video_muito_longo, sem
 	// extrair (ADR-0011); padrão DuracaoMaximaPadrao.
 	DuracaoMaxima time.Duration
-	// BackoffInicial e OrcamentoRetry regem a nova tentativa de cada operação
-	// de infraestrutura (Postgres, volume); padrão BackoffInicialPadrao e
-	// OrcamentoRetryPadrao. Esgotado o orçamento, a mensagem volta à fila.
-	BackoffInicial time.Duration
-	OrcamentoRetry time.Duration
+	// Retry rege a nova tentativa de cada operação de infraestrutura
+	// (Postgres, volume); zero usa os padrões do pacote retentativa. Esgotado
+	// o orçamento, a mensagem volta à fila. Somado ao timeout do ffmpeg, tem
+	// de ficar abaixo do consumer_timeout do RabbitMQ (ADR-0004).
+	Retry retentativa.Politica
 }
 
 // Processador trata as mensagens da fila processamento.
@@ -91,12 +84,6 @@ func NovoProcessador(pool *pgxpool.Pool, arqs Armazenamento, ext Extrator, cfg C
 	}
 	if cfg.DuracaoMaxima <= 0 {
 		cfg.DuracaoMaxima = DuracaoMaximaPadrao
-	}
-	if cfg.BackoffInicial <= 0 {
-		cfg.BackoffInicial = BackoffInicialPadrao
-	}
-	if cfg.OrcamentoRetry <= 0 {
-		cfg.OrcamentoRetry = OrcamentoRetryPadrao
 	}
 	return &Processador{repo: repositorio{pool: pool}, arqs: arqs, ext: ext, cfg: cfg, log: log}
 }
@@ -140,7 +127,7 @@ func (p *Processador) Processar(ctx context.Context, corpo []byte) mensageria.Re
 		return mensageria.Confirmar
 	}
 
-	err := tentarSo(ctx, p.cfg, log, "iniciar", func() error { return p.repo.iniciar(ctx, id) })
+	err := retentativa.TentarSo(ctx, p.cfg.Retry, log, "iniciar", transitorio, func() error { return p.repo.iniciar(ctx, id) })
 	switch {
 	case errors.Is(err, errNaoEncontrado):
 		log.ErrorContext(ctx, "vídeo inexistente; mensagem descartada")
@@ -177,8 +164,8 @@ func (p *Processador) ProcessarDLQ(ctx context.Context, corpo []byte) mensageria
 	if !ok {
 		return mensageria.Confirmar
 	}
-	falhou, err := tentar(ctx, p.cfg, log, "registrar falha", func() (bool, error) {
-		return p.repo.falhar(ctx, id, correlationID, videos.MotivoErroInterno)
+	falhou, err := retentativa.Tentar(ctx, p.cfg.Retry, log, "registrar falha", transitorio, func() (bool, error) {
+		return p.repo.falhar(ctx, id, correlationID, motivo.ErroInterno)
 	})
 	if err != nil {
 		log.WarnContext(ctx, "dlq: não deu para registrar a falha; mensagem devolvida", "erro", err)
@@ -188,7 +175,7 @@ func (p *Processador) ProcessarDLQ(ctx context.Context, corpo []byte) mensageria
 		log.InfoContext(ctx, "dlq: vídeo já terminal ou inexistente; confirmada sem evento")
 		return mensageria.Confirmar
 	}
-	log.ErrorContext(ctx, "falha definitiva: tentativas esgotadas", "motivo", videos.MotivoErroInterno)
+	log.ErrorContext(ctx, "falha definitiva: tentativas esgotadas", "motivo", motivo.ErroInterno)
 	p.apagarOriginal(ctx, id, log)
 	return mensageria.Confirmar
 }
@@ -209,39 +196,10 @@ func (p *Processador) lerMensagem(ctx context.Context, corpo []byte) (id uuid.UU
 	return id, msg.CorrelationID, p.log.With("video_id", id, "correlation_id", msg.CorrelationID), true
 }
 
-// tentar repete op enquanto o erro for transitório, com backoff exponencial a
-// partir de cfg.BackoffInicial, até o orçamento acabar; a última espera
-// encolhe para caber nele (ADR-0004). Devolve o último resultado.
-func tentar[T any](ctx context.Context, cfg Config, log *slog.Logger, operacao string, op func() (T, error)) (T, error) {
-	limite := time.Now().Add(cfg.OrcamentoRetry)
-	espera := cfg.BackoffInicial
-	for {
-		v, err := op()
-		resta := time.Until(limite)
-		if err == nil || !transitorio(ctx, err) || resta <= 0 {
-			return v, err
-		}
-		espera = min(espera, resta)
-		log.WarnContext(ctx, "infraestrutura falhou; tentando de novo", "operacao", operacao, "espera", espera.String(), "erro", err)
-		select {
-		case <-ctx.Done():
-			return v, err
-		case <-time.After(espera):
-		}
-		espera *= 2
-	}
-}
-
-// tentarSo é tentar para operações sem resultado.
-func tentarSo(ctx context.Context, cfg Config, log *slog.Logger, operacao string, op func() error) error {
-	_, err := tentar(ctx, cfg, log, operacao, func() (struct{}, error) { return struct{}{}, op() })
-	return err
-}
-
-// transitorio diz se vale tentar de novo: não com o Worker parando, nem com
-// as respostas definitivas do repositório.
-func transitorio(ctx context.Context, err error) bool {
-	return ctx.Err() == nil && !errors.Is(err, errNaoEncontrado) && !errors.Is(err, errTerminal)
+// transitorio diz se vale tentar de novo: não com as respostas definitivas
+// do repositório.
+func transitorio(err error) bool {
+	return !errors.Is(err, errNaoEncontrado) && !errors.Is(err, errTerminal)
 }
 
 // falhaPermanente é um erro permanente do ADR-0004, do próprio vídeo: tentar
@@ -259,7 +217,7 @@ func (f *falhaPermanente) Unwrap() error { return f.err }
 // DLQ (ADR-0004). Se a transação não sair, a mensagem volta à fila e a
 // reentrega chega à mesma conclusão.
 func (p *Processador) falhar(ctx context.Context, id uuid.UUID, correlationID string, perm *falhaPermanente, log *slog.Logger) mensageria.Resultado {
-	falhou, err := tentar(ctx, p.cfg, log, "registrar falha", func() (bool, error) {
+	falhou, err := retentativa.Tentar(ctx, p.cfg.Retry, log, "registrar falha", transitorio, func() (bool, error) {
 		return p.repo.falhar(ctx, id, correlationID, perm.motivo)
 	})
 	if err != nil {
@@ -303,7 +261,7 @@ func (p *Processador) processar(ctx context.Context, id uuid.UUID, correlationID
 	// ffprobe, em vez de gastar as entregas (ADR-0004). O ffmpeg em si não é
 	// repetido no processo, para não estourar o consumer_timeout.
 	original := p.arqs.Original(id)
-	if err := tentarSo(ctx, p.cfg, log, "ler original", func() error {
+	if err := retentativa.TentarSo(ctx, p.cfg.Retry, log, "ler original", transitorio, func() error {
 		_, err := os.Stat(original)
 		return err
 	}); err != nil {
@@ -313,13 +271,13 @@ func (p *Processador) processar(ctx context.Context, id uuid.UUID, correlationID
 	if err != nil {
 		return err
 	}
-	err = tentarSo(ctx, p.cfg, log, "publicar zip", func() error {
+	err = retentativa.TentarSo(ctx, p.cfg.Retry, log, "publicar zip", transitorio, func() error {
 		return p.arqs.PublicarZip(ctx, id, func(w io.Writer) error { return escreverZip(ctx, w, frames) })
 	})
 	if err != nil {
 		return err
 	}
-	concluiu, err := tentar(ctx, p.cfg, log, "concluir", func() (bool, error) {
+	concluiu, err := retentativa.Tentar(ctx, p.cfg.Retry, log, "concluir", transitorio, func() (bool, error) {
 		return p.repo.concluir(ctx, id, correlationID, p.cfg.RetencaoZip)
 	})
 	if err != nil {
@@ -350,7 +308,7 @@ func (p *Processador) extrair(ctx context.Context, original, dir string) ([]stri
 		return nil, classificar(ctx, err)
 	}
 	if len(frames) == 0 {
-		return nil, &falhaPermanente{videos.MotivoSemFrames, errors.New("o ffmpeg não extraiu nenhum frame")}
+		return nil, &falhaPermanente{motivo.SemFrames, errors.New("o ffmpeg não extraiu nenhum frame")}
 	}
 	// Quando o contêiner não informa a duração, a sonda não barra: com 1
 	// frame por segundo, a contagem confere (um a mais pelo arredondamento).
@@ -361,7 +319,7 @@ func (p *Processador) extrair(ctx context.Context, original, dir string) ([]stri
 }
 
 func muitoLongo(medida string, maxima time.Duration) *falhaPermanente {
-	return &falhaPermanente{videos.MotivoVideoMuitoLongo, fmt.Errorf("%s acima da duração máxima %v", medida, maxima)}
+	return &falhaPermanente{motivo.VideoMuitoLongo, fmt.Errorf("%s acima da duração máxima %v", medida, maxima)}
 }
 
 // classificar separa os erros permanentes do ffprobe e do ffmpeg (ADR-0004).
@@ -372,9 +330,9 @@ func classificar(ctx context.Context, err error) error {
 	case ctx.Err() != nil:
 		return err
 	case errors.Is(err, context.DeadlineExceeded):
-		return &falhaPermanente{videos.MotivoTempoExcedido, err}
+		return &falhaPermanente{motivo.TempoExcedido, err}
 	case errors.Is(err, extracao.ErrVideoInvalido):
-		return &falhaPermanente{videos.MotivoVideoInvalido, err}
+		return &falhaPermanente{motivo.VideoInvalido, err}
 	default:
 		return err
 	}

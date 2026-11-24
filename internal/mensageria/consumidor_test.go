@@ -166,3 +166,25 @@ func TestConsumir_ReconectaDepoisDeQueda(t *testing.T) {
 		t.Fatal("consumidor não voltou depois da queda")
 	}
 }
+
+// Rejeitar manda a mensagem direto para a DLQ, sem gastar as entregas: é a
+// mensagem que nunca vai dar certo e fica guardada para inspeção.
+func TestConsumir_RejeitarVaiDiretoParaDLQ(t *testing.T) {
+	url := integracao.RabbitMQ(t)
+	var entregas atomic.Int32
+	consumir(t, url, 1, func(context.Context, []byte) mensageria.Resultado {
+		entregas.Add(1)
+		return mensageria.Rejeitar
+	})
+	ch := canal(t, url)
+	filaDeclarada(t, url)
+
+	publicarJob(t, ch, "sem-conserto")
+
+	if d := receber(t, ch, mensageria.DLQ(mensageria.FilaProcessamento)); string(d.Body) != "sem-conserto" {
+		t.Errorf("DLQ: corpo = %s", d.Body)
+	}
+	if n := entregas.Load(); n != 1 {
+		t.Errorf("entregas = %d, quero 1", n)
+	}
+}

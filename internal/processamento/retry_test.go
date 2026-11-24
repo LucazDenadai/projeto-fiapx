@@ -19,6 +19,7 @@ import (
 	"github.com/LucazDenadai/projeto-fiapx/internal/integracao"
 	"github.com/LucazDenadai/projeto-fiapx/internal/mensageria"
 	"github.com/LucazDenadai/projeto-fiapx/internal/processamento"
+	"github.com/LucazDenadai/projeto-fiapx/internal/retentativa"
 )
 
 // novoCenarioComProxy é o cenário com um pool que passa por um Proxy, para
@@ -74,9 +75,8 @@ func TestProcessar_OrcamentoEsgotadoDevolve(t *testing.T) {
 	id := c.videoRecebido(t, "recebido", time.Second)
 	ext := derrubaNaExtracao{Extrator: extracao.Novo(extracao.Config{}), proxy: proxy, fora: time.Hour}
 	proc := processamento.NovoProcessador(viaProxy, c.volume, ext, processamento.Config{
-		DirTrabalho:    c.trabalho,
-		BackoffInicial: 100 * time.Millisecond,
-		OrcamentoRetry: time.Second,
+		DirTrabalho: c.trabalho,
+		Retry:       retentativa.Politica{Inicial: 100 * time.Millisecond, Orcamento: time.Second},
 	}, slog.New(slog.DiscardHandler))
 
 	inicio := time.Now()
@@ -279,8 +279,7 @@ func TestProcessar_OriginalIndisponivelPorInstanteTentaDeNovo(t *testing.T) {
 	}
 	time.AfterFunc(500*time.Millisecond, func() { _ = os.Rename(escondido, original) })
 	proc := c.processadorCom(t, nil, nil, processamento.Config{
-		BackoffInicial: 100 * time.Millisecond,
-		OrcamentoRetry: 5 * time.Second,
+		Retry: retentativa.Politica{Inicial: 100 * time.Millisecond, Orcamento: 5 * time.Second},
 	}, slog.New(slog.DiscardHandler))
 
 	if r := proc.Processar(t.Context(), mensagem(id, "c")); r != mensageria.Confirmar {
