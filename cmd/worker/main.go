@@ -88,8 +88,8 @@ func servir(ctx context.Context, log *slog.Logger) error {
 
 	proc := processamento.NovoProcessador(pool, armazenamento.NovoVolume(dados),
 		extracao.Novo(extracao.Config{Timeout: timeoutFFmpeg}),
-		processamento.Config{DirTrabalho: trabalho, RetencaoZip: retencaoZip}, log)
-	if err := proc.LimparTrabalho(); err != nil {
+		processamento.Config{DirTrabalho: trabalho, RetencaoZip: retencaoZip, TimeoutExtracao: timeoutFFmpeg}, log)
+	if err := proc.LimparTrabalho(ctx); err != nil {
 		return err
 	}
 	ctxConsumo, pararConsumo := context.WithCancel(ctx)

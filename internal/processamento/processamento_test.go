@@ -220,11 +220,14 @@ func TestProcessar_ZipExpiraNaRetencao(t *testing.T) {
 	}
 }
 
-// zipQueCai simula um Worker que cai depois de extrair os frames e antes do
-// commit: a publicação do zip falha.
+// zipQueCai simula um Worker que cai depois de extrair os frames e publicar o
+// zip, antes do commit do concluido.
 type zipQueCai struct{ processamento.Armazenamento }
 
-func (zipQueCai) PublicarZip(context.Context, uuid.UUID, func(io.Writer) error) error {
+func (z zipQueCai) PublicarZip(ctx context.Context, id uuid.UUID, escrever func(io.Writer) error) error {
+	if err := z.Armazenamento.PublicarZip(ctx, id, escrever); err != nil {
+		return err
+	}
 	return errors.New("worker caiu")
 }
 
@@ -335,8 +338,50 @@ func TestLimparTrabalho_ApagaSobrasDeQueda(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := c.processador(t, nil, nil).LimparTrabalho(); err != nil {
+	if err := c.processador(t, nil, nil).LimparTrabalho(t.Context()); err != nil {
 		t.Fatalf("limpar: %v", err)
+	}
+	c.trabalhoVazio(t)
+}
+
+// lento gasta parte do prazo em cada execução; somadas, passam do prazo.
+type lento struct{ processamento.Extrator }
+
+func esperarOuPrazo(ctx context.Context) error {
+	select {
+	case <-time.After(300 * time.Millisecond):
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+func (l lento) Sondar(ctx context.Context, arquivo string) (extracao.Sonda, error) {
+	if err := esperarOuPrazo(ctx); err != nil {
+		return extracao.Sonda{}, err
+	}
+	return l.Extrator.Sondar(ctx, arquivo)
+}
+
+func (l lento) ExtrairFrames(ctx context.Context, arquivo, dir string) ([]string, error) {
+	if err := esperarOuPrazo(ctx); err != nil {
+		return nil, err
+	}
+	return l.Extrator.ExtrairFrames(ctx, arquivo, dir)
+}
+
+func TestProcessar_TimeoutValePorProcessamento(t *testing.T) {
+	c := novoCenario(t)
+	id := c.videoRecebido(t, "recebido", time.Second)
+	// Cada execução cabe em 500 ms; as duas juntas, não.
+	proc := processamento.NovoProcessador(c.pool, c.volume, lento{extracao.Novo(extracao.Config{})},
+		processamento.Config{DirTrabalho: c.trabalho, TimeoutExtracao: 500 * time.Millisecond}, slog.New(slog.DiscardHandler))
+
+	if r := proc.Processar(t.Context(), mensagem(id, "c")); r != mensageria.Devolver {
+		t.Errorf("resultado = %v, quero Devolver (prazo estourado)", r)
+	}
+	if s := c.status(t, id); s != "processando" {
+		t.Errorf("status = %s, quero processando", s)
 	}
 	c.trabalhoVazio(t)
 }

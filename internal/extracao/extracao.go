@@ -19,14 +19,17 @@ import (
 // TimeoutPadrao é o tempo máximo de cada execução do ffprobe ou do ffmpeg.
 const TimeoutPadrao = 10 * time.Minute
 
-// Só os demuxers dos formatos que a API aceita (videos.pareceVideo) abrem o
+// entradaRestrita vai antes do arquivo de entrada no ffprobe e no ffmpeg: só
+// os demuxers dos formatos que a API aceita (videos.pareceVideo) abrem o
 // original, e só pelo protocolo file. Sem isso, um original que fosse, por
 // exemplo, uma playlist HLS ou um script concat faria o ffmpeg ler outros
-// arquivos do container ou URLs da rede.
-const (
-	demuxersPermitidos   = "mov,matroska,avi,mpeg,mpegts,flv,asf"
-	protocolosPermitidos = "file"
-)
+// arquivos do container ou URLs da rede. Referências externas do mov (dref)
+// já vêm desligadas por padrão (enable_drefs=0); passar a opção explícita
+// quebraria os outros demuxers, que não a conhecem.
+var entradaRestrita = []string{
+	"-protocol_whitelist", "file",
+	"-format_whitelist", "mov,matroska,avi,mpeg,mpegts,flv,asf",
+}
 
 // prefixoFrame e extensao nomeiam os frames gerados: frame_00001.png, ...
 const (
@@ -71,15 +74,14 @@ var ErrSemVideo = errors.New("arquivo sem stream de vídeo")
 // Sondar lê a duração do arquivo com o ffprobe e confere que ele tem um stream
 // de vídeo.
 func (e *Extrator) Sondar(ctx context.Context, arquivo string) (Sonda, error) {
-	saida, err := e.rodar(ctx, e.cfg.FFprobe,
-		"-v", "error",
-		"-protocol_whitelist", protocolosPermitidos,
-		"-format_whitelist", demuxersPermitidos,
+	args := append([]string{"-v", "error"}, entradaRestrita...)
+	args = append(args,
 		"-select_streams", "v:0",
 		"-show_entries", "stream=codec_type:format=duration",
 		"-of", "json",
 		"file:"+arquivo,
 	)
+	saida, err := e.rodar(ctx, e.cfg.FFprobe, args...)
 	if err != nil {
 		return Sonda{}, fmt.Errorf("ffprobe: %w", err)
 	}
@@ -108,17 +110,15 @@ func (e *Extrator) Sondar(ctx context.Context, arquivo string) (Sonda, error) {
 // vídeo do arquivo e devolve os caminhos dos frames, em ordem. dir deve estar
 // vazio.
 func (e *Extrator) ExtrairFrames(ctx context.Context, arquivo, dir string) ([]string, error) {
-	_, err := e.rodar(ctx, e.cfg.FFmpeg,
-		"-nostdin", "-hide_banner", "-v", "error",
-		"-protocol_whitelist", protocolosPermitidos,
-		"-format_whitelist", demuxersPermitidos,
+	args := append([]string{"-nostdin", "-hide_banner", "-v", "error"}, entradaRestrita...)
+	args = append(args,
 		"-i", "file:"+arquivo,
 		"-map", "0:v:0",
 		"-vf", "fps=1",
 		"-f", "image2",
 		"file:"+filepath.Join(dir, prefixoFrame+"%05d"+extensao),
 	)
-	if err != nil {
+	if _, err := e.rodar(ctx, e.cfg.FFmpeg, args...); err != nil {
 		return nil, fmt.Errorf("ffmpeg: %w", err)
 	}
 	entradas, err := os.ReadDir(dir)

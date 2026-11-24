@@ -45,6 +45,9 @@ type Config struct {
 	// container. É só do Worker: LimparTrabalho apaga tudo o que houver nele.
 	DirTrabalho string
 	RetencaoZip time.Duration // padrão RetencaoZipPadrao
+	// TimeoutExtracao é o prazo do ffprobe e do ffmpeg somados, por
+	// Processamento (ADR-0011); padrão extracao.TimeoutPadrao.
+	TimeoutExtracao time.Duration
 }
 
 // Processador trata as mensagens da fila processamento.
@@ -61,13 +64,16 @@ func NovoProcessador(pool *pgxpool.Pool, arqs Armazenamento, ext Extrator, cfg C
 	if cfg.RetencaoZip <= 0 {
 		cfg.RetencaoZip = RetencaoZipPadrao
 	}
+	if cfg.TimeoutExtracao <= 0 {
+		cfg.TimeoutExtracao = extracao.TimeoutPadrao
+	}
 	return &Processador{repo: repositorio{pool: pool}, arqs: arqs, ext: ext, cfg: cfg, log: log}
 }
 
 // LimparTrabalho apaga as sobras de Processamentos interrompidos por uma queda
 // (frame não é estado: a reentrega refaz do zero). Chame na subida, antes de
 // consumir.
-func (p *Processador) LimparTrabalho() error {
+func (p *Processador) LimparTrabalho(ctx context.Context) error {
 	if err := os.MkdirAll(p.cfg.DirTrabalho, 0o750); err != nil {
 		return fmt.Errorf("criar diretório de trabalho: %w", err)
 	}
@@ -76,6 +82,9 @@ func (p *Processador) LimparTrabalho() error {
 		return fmt.Errorf("listar diretório de trabalho: %w", err)
 	}
 	for _, e := range entradas {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 		if err := os.RemoveAll(filepath.Join(p.cfg.DirTrabalho, e.Name())); err != nil {
 			return fmt.Errorf("limpar diretório de trabalho: %w", err)
 		}
@@ -141,16 +150,9 @@ func (p *Processador) processar(ctx context.Context, id uuid.UUID, correlationID
 		}
 	}()
 
-	original := p.arqs.Original(id)
-	if _, err := p.ext.Sondar(ctx, original); err != nil {
-		return err
-	}
-	frames, err := p.ext.ExtrairFrames(ctx, original, dir)
+	frames, err := p.extrair(ctx, p.arqs.Original(id), dir)
 	if err != nil {
 		return err
-	}
-	if len(frames) == 0 {
-		return errors.New("nenhum frame extraído")
 	}
 	if err := p.arqs.PublicarZip(ctx, id, func(w io.Writer) error { return escreverZip(ctx, w, frames) }); err != nil {
 		return err
@@ -168,6 +170,24 @@ func (p *Processador) processar(ctx context.Context, id uuid.UUID, correlationID
 		log.ErrorContext(ctx, "apagar original", "erro", err)
 	}
 	return nil
+}
+
+// extrair sonda o original e grava os frames em dir, tudo dentro de um único
+// prazo: o timeout vale para o Processamento, não para cada execução.
+func (p *Processador) extrair(ctx context.Context, original, dir string) ([]string, error) {
+	ctx, cancel := context.WithTimeout(ctx, p.cfg.TimeoutExtracao)
+	defer cancel()
+	if _, err := p.ext.Sondar(ctx, original); err != nil {
+		return nil, err
+	}
+	frames, err := p.ext.ExtrairFrames(ctx, original, dir)
+	if err != nil {
+		return nil, err
+	}
+	if len(frames) == 0 {
+		return nil, errors.New("nenhum frame extraído")
+	}
+	return frames, nil
 }
 
 // escreverZip empacota os frames sem compressão: PNG quase não comprime, e
