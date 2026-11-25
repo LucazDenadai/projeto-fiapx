@@ -30,6 +30,9 @@ services:
 
   rabbitmq:
     image: rabbitmq:4.2-alpine
+    # O diretório de dados leva o nome do host: sem um nome fixo, recriar o
+    # container começaria com as filas vazias (ADR-0002).
+    hostname: rabbitmq
     environment:
       RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:?defina no .env}
       RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:?defina no .env}

@@ -112,6 +112,8 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg
       - name: Smoke test
         run: scripts/smoke.sh
+      - name: A fila sobrevive à recriação do RabbitMQ
+        run: scripts/recriacao.sh
       - name: Estado e logs da stack
         if: failure()
         run: |
