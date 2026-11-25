@@ -133,14 +133,14 @@ func (c cenario) existe(caminho string, quero bool) {
 
 func TestRodada_ApagaSoOZipVencidoEMantemOVideo(t *testing.T) {
 	c := novoCenario(t)
-	vencido, noPrazo, valendo := c.video("concluido", em(-time.Second)), c.video("concluido", em(0)), c.video("concluido", em(time.Second))
+	vencido, noInstante, valendo := c.video("concluido", em(-time.Second)), c.video("concluido", em(0)), c.video("concluido", em(time.Second))
 	zip := func(id uuid.UUID) string { return c.arquivo(filepath.Join(c.dir(id), "frames.zip"), 8*24*time.Hour) }
-	zipVencido, zipNoPrazo, zipValendo := zip(vencido), zip(noPrazo), zip(valendo)
+	zipVencido, zipNoInstante, zipValendo := zip(vencido), zip(noInstante), zip(valendo)
 
 	r := c.rodada()
 
 	c.existe(zipVencido, false)
-	c.existe(zipNoPrazo, false) // nesse instante a API já não o entrega
+	c.existe(zipNoInstante, false) // nesse instante a API já não o entrega
 	c.existe(zipValendo, true)
 	if r.Zips != 2 {
 		t.Errorf("zips apagados = %d, quero 2", r.Zips)
@@ -152,6 +152,23 @@ func TestRodada_ApagaSoOZipVencidoEMantemOVideo(t *testing.T) {
 	}
 	if r := c.rodada(); r.Zips != 0 {
 		t.Errorf("segunda rodada apagou %d zips, quero 0", r.Zips)
+	}
+}
+
+// O zip saiu, mas o Vídeo falhou antes de concluir (Postgres fora até esgotar as
+// entregas): ninguém pode baixá-lo, e ele não tem prazo para vencer.
+func TestRodada_ApagaZipDeVideoQueFalhou(t *testing.T) {
+	c := novoCenario(t)
+	falhou, processando := c.video("falhou", nil), c.video("processando", nil)
+	zipFalhou := c.arquivo(filepath.Join(c.dir(falhou), "frames.zip"), time.Minute)
+	zipProcessando := c.arquivo(filepath.Join(c.dir(processando), "frames.zip"), 48*time.Hour)
+
+	r := c.rodada()
+
+	c.existe(zipFalhou, false)
+	c.existe(zipProcessando, true) // publicado, falta só concluir
+	if r.Zips != 1 {
+		t.Errorf("zips apagados = %d, quero 1", r.Zips)
 	}
 }
 

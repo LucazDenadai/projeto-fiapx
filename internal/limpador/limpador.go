@@ -51,7 +51,7 @@ type Config struct {
 	Intervalo time.Duration // entre rodadas (padrão 1h)
 	// IdadeOrfao é há quanto tempo um temporário ou um diretório sem Vídeo
 	// precisa estar parado para ser apagado (padrão 1h). Tem de ficar acima do
-	// timeout de envio da API.
+	// timeout de envio da API: abaixo, um envio em andamento parece órfão.
 	IdadeOrfao     time.Duration
 	RetencaoOutbox time.Duration // das linhas publicadas (padrão 7 dias)
 	LoteOutbox     int           // linhas apagadas por vez (padrão 1000)
@@ -215,11 +215,13 @@ func (l *Limpador) limparVolume(ctx context.Context, conn *pgxpool.Conn, agora t
 	return errors.Join(append(erros, err)...)
 }
 
-// situacao de um Vídeo que interessa ao limpador.
+// situacao de um Vídeo que interessa ao limpador. zipSemUso: num
+// Vídeo terminal, o contrário de videos.Video.ZipDisponivel. Inclui o zip de um
+// Vídeo que falhou depois de publicá-lo, que não tem prazo para vencer.
 type situacao struct {
-	id         uuid.UUID
-	terminal   bool
-	zipVencido bool
+	id        uuid.UUID
+	terminal  bool
+	zipSemUso bool
 }
 
 // consultar busca a situação dos Vídeos dos diretórios; diretório sem Vídeo
@@ -229,14 +231,14 @@ func consultar(ctx context.Context, conn *pgxpool.Conn, dirs []armazenamento.Dir
 	for i, d := range dirs {
 		ids[i] = d.ID
 	}
-	rows, err := conn.Query(ctx, `SELECT id, status IN ($2, $3), coalesce(zip_expira_em <= $4, false)
+	rows, err := conn.Query(ctx, `SELECT id, status IN ($2, $3), status = $3 OR coalesce(zip_expira_em <= $4, false)
 		FROM videos WHERE id = ANY($1)`, ids, videos.StatusConcluido, videos.StatusFalhou, agora)
 	if err != nil {
 		return nil, fmt.Errorf("buscar vídeos do volume: %w", err)
 	}
 	lista, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (situacao, error) {
 		var s situacao
-		err := row.Scan(&s.id, &s.terminal, &s.zipVencido)
+		err := row.Scan(&s.id, &s.terminal, &s.zipSemUso)
 		return s, err
 	})
 	if err != nil {
@@ -262,18 +264,16 @@ func (l *Limpador) limparDiretorio(ctx context.Context, d armazenamento.Diretori
 	if !s.terminal {
 		return nil
 	}
+	var erros []error
 	if d.TemOriginal {
-		if err := contar(&r.Originais, l.arqs.ApagarOriginal(ctx, d.ID)); err != nil {
-			return err
-		}
+		erros = append(erros, contar(&r.Originais, l.arqs.ApagarOriginal(ctx, d.ID)))
 	}
-	if d.TemZip && s.zipVencido {
-		if err := contar(&r.Zips, l.arqs.ApagarZip(ctx, d.ID)); err != nil {
-			return err
-		}
+	if d.TemZip && s.zipSemUso {
+		erros = append(erros, contar(&r.Zips, l.arqs.ApagarZip(ctx, d.ID)))
 	}
 	// Vídeo terminal sem arquivos: o diretório só atrasaria as próximas rodadas.
-	return l.arqs.ApagarSeVazio(ctx, d.ID)
+	erros = append(erros, l.arqs.ApagarSeVazio(ctx, d.ID))
+	return errors.Join(erros...)
 }
 
 // contar soma um em n se a operação deu certo, e devolve o erro dela.

@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -86,6 +85,9 @@ func (v *Volume) lerDiretorio(id uuid.UUID) (Diretorio, error) {
 			d.TemZip = true
 		}
 		info, err := e.Info()
+		if errors.Is(err, os.ErrNotExist) {
+			continue // temporário publicado ou apagado durante a leitura
+		}
 		if err != nil {
 			return Diretorio{}, fmt.Errorf("ler diretório do vídeo: %w", err)
 		}
@@ -177,7 +179,7 @@ func (v *Volume) ApagarSeVazio(_ context.Context, id uuid.UUID) error {
 
 // ignorarAusente embrulha err, salvo se for o arquivo já não existir.
 func ignorarAusente(operacao string, err error) error {
-	if err == nil || errors.Is(err, fs.ErrNotExist) {
+	if err == nil || errors.Is(err, os.ErrNotExist) {
 		return nil
 	}
 	return fmt.Errorf("%s: %w", operacao, err)

@@ -124,6 +124,8 @@ services:
       # Limpador (ADR-0015). Vazio: 1 h, 1 h e 7 dias
       LIMPADOR_INTERVALO: ${LIMPADOR_INTERVALO:-}
       LIMPADOR_IDADE_ORFAO: ${LIMPADOR_IDADE_ORFAO:-}
+      # Só para conferir que a idade acima é maior que ele.
+      ENVIO_TIMEOUT: ${ENVIO_TIMEOUT:-}
       OUTBOX_RETENCAO: ${OUTBOX_RETENCAO:-}
     volumes:
       - dados:/data

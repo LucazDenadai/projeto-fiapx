@@ -85,6 +85,13 @@ func servir(ctx context.Context, log *slog.Logger) error {
 	if err != nil {
 		return err
 	}
+	timeoutEnvio, err := processo.Duracao("ENVIO_TIMEOUT", timeoutEnvioAPI)
+	if err != nil {
+		return err
+	}
+	if idadeOrfao <= timeoutEnvio {
+		return fmt.Errorf("LIMPADOR_IDADE_ORFAO (%v) tem de ser maior que o ENVIO_TIMEOUT (%v): o limpador apagaria um envio em andamento", idadeOrfao, timeoutEnvio)
+	}
 	retencaoOutbox, err := processo.Duracao("OUTBOX_RETENCAO", limpador.RetencaoOutboxPadrao)
 	if err != nil {
 		return err
@@ -177,6 +184,9 @@ func servir(ctx context.Context, log *slog.Logger) error {
 	)
 	return processo.Servir(ctx, log, interno)
 }
+
+// timeoutEnvioAPI é o padrão do ENVIO_TIMEOUT na API (ADR-0011).
+const timeoutEnvioAPI = 10 * time.Minute
 
 // consumerTimeoutRabbitMQ é o padrão do broker: uma mensagem sem ack por mais
 // tempo que isso fecha o canal e conta uma entrega espúria.

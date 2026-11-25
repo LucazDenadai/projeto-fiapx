@@ -2,7 +2,6 @@ package armazenamento
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -82,10 +81,7 @@ func (v *Volume) AbrirZip(_ context.Context, id uuid.UUID) (*os.File, error) {
 
 // ApagarOriginal remove o original do Vídeo; se ele já não existir, não é erro.
 func (v *Volume) ApagarOriginal(_ context.Context, id uuid.UUID) error {
-	if err := os.Remove(v.Original(id)); err != nil && !errors.Is(err, os.ErrNotExist) {
-		return fmt.Errorf("apagar original: %w", err)
-	}
-	return nil
+	return ignorarAusente("apagar original", os.Remove(v.Original(id)))
 }
 
 // prefixoTemporario é o do temporário em que o arquivo nome é gravado; o
@@ -123,10 +119,7 @@ func gravarAtomico(dir, nome string, escrever func(io.Writer) error) (err error)
 
 // Apagar remove tudo o que o Vídeo tem no volume.
 func (v *Volume) Apagar(_ context.Context, id uuid.UUID) error {
-	if err := os.RemoveAll(v.dirVideo(id)); err != nil && !errors.Is(err, os.ErrNotExist) {
-		return fmt.Errorf("apagar arquivos do vídeo: %w", err)
-	}
-	return nil
+	return ignorarAusente("apagar arquivos do vídeo", os.RemoveAll(v.dirVideo(id)))
 }
 
 // leitorComContexto interrompe a cópia quando o contexto é cancelado.
