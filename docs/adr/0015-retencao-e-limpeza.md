@@ -25,9 +25,9 @@ O [ADR-0014](0014-ciclo-de-vida-do-video.md) tirou o reprocessamento, então o o
   - a listagem não mostra mais o `download`, e mostra o `zip_expira_em`;
   - `GET /videos/{id}/zip` responde **`410 Gone`**. Os códigos do ADR-0006 continuam valendo para o resto: `404` para Vídeo de outro Usuário, `409` para Vídeo não concluído.
 - **Limpador: goroutine no Worker**, a cada 1h. Antes de cada rodada, tenta `pg_try_advisory_lock`; se outra réplica já tem o lock, pula a rodada. Cada rodada recolhe:
-  1. zips com `zip_expira_em` vencido;
+  1. zips com `zip_expira_em` vencido, e o zip de Vídeo `falhou` (publicado antes de a conclusão falhar: não pode ser baixado e não tem prazo);
   2. originais de Vídeos terminais que ainda existem;
-  3. temporários de gravação no volume com mais de 1h (acima do timeout de envio de 10 min);
+  3. temporários de gravação no volume (inclusive o da checagem de readiness) com mais de 1h (acima do timeout de envio de 10 min);
   4. diretórios `/data/videos/{id}` sem Vídeo no banco, com mais de 1h (queda entre gravar e confirmar);
   5. linhas da `outbox` com `publicado_em` de mais de 7 dias, em lotes de 1000. Linha não publicada nunca é apagada.
 
@@ -42,12 +42,15 @@ O [ADR-0014](0014-ciclo-de-vida-do-video.md) tirou o reprocessamento, então o o
 - **Serviço `limpador` separado, ou cron no host**: rejeitado. Seria mais um container ou uma dependência fora do Compose, para uma tarefa de segundos por hora. O Worker já monta o volume e acessa o banco.
 - **Limpador em todas as réplicas, sem lock**: rejeitado. Réplicas apagariam os mesmos arquivos em paralelo e encheriam o log de erros de "arquivo não existe".
 - **Lifecycle do sistema de arquivos ou do Docker**: rejeitado. Não existe para volumes nomeados.
+- **Buscar os zips vencidos no banco, por um índice em `zip_expira_em`**: rejeitado. O registro do Vídeo fica para sempre, então a busca devolveria, a cada rodada, todo o histórico já limpo.
 - **Apagar o registro do Vídeo junto com o zip**: rejeitado. O Usuário perderia o histórico, e a listagem mostraria menos do que ele enviou.
 
 ## Consequências
 
 - O disco ocupado fica limitado a: originais dos Vídeos em andamento (cota de 5 por Usuário), mais os zips dos últimos 7 dias, mais temporários de até 1h.
-- A tabela de Vídeos ganha `zip_expira_em`, com índice para a busca do limpador. A coleção do Postman documenta o `410`.
+- A tabela de Vídeos ganha `zip_expira_em`, sem índice. O limpador parte dos diretórios que existem no volume e consulta esses ids pela chave primária, então o custo da rodada acompanha o disco ocupado.
+- O diretório de um Vídeo terminal é apagado quando fica vazio, para as rodadas seguintes não o percorrerem de novo.
+- A coleção do Postman documenta o `410`.
 - O limpador ganha métricas (ADR-0010): itens apagados por tipo e duração da rodada.
 - Com `--scale worker=N`, só uma réplica limpa por rodada. Se ela cair no meio, o lock é liberado com a conexão, e a próxima rodada continua do ponto em que parou.
 - Os testes cobrem cada item da rodada com relógio injetado, e o lock com duas instâncias concorrentes.

@@ -201,7 +201,7 @@
             }
           ]
         },
-        "description": "Lista os Vídeos do Usuário do token, do mais recente para o mais antigo.\n\n- `limite` de 1 a 100 (padrão 20); `cursor` vem de `proximo_cursor` da página anterior.\n- `200` `{\"videos\": [...], \"proximo_cursor\": \"...\"}`; sem `proximo_cursor` na última página.\n- Cada item: `id`, `nome_original`, `status` (`recebido`, `processando`, `concluido`, `falhou`), `criado_em`, `atualizado_em`. Em `falhou`: `motivo` (`video_invalido`, `video_muito_longo`, `sem_frames`, `tempo_excedido`, `erro_interno`) e `motivo_texto`. Em `concluido`: `download` e `zip_expira_em`.\n- `400` `limite` fora da faixa ou `cursor` inválido. `401` sem token."
+        "description": "Lista os Vídeos do Usuário do token, do mais recente para o mais antigo.\n\n- `limite` de 1 a 100 (padrão 20); `cursor` vem de `proximo_cursor` da página anterior.\n- `200` `{\"videos\": [...], \"proximo_cursor\": \"...\"}`; sem `proximo_cursor` na última página.\n- Cada item: `id`, `nome_original`, `status` (`recebido`, `processando`, `concluido`, `falhou`), `criado_em`, `atualizado_em`. Em `falhou`: `motivo` (`video_invalido`, `video_muito_longo`, `sem_frames`, `tempo_excedido`, `erro_interno`) e `motivo_texto`. Em `concluido`: `zip_expira_em` e, até essa data, `download`; depois dela o zip não pode mais ser baixado (`410`), mas o Vídeo continua na listagem.\n- `400` `limite` fora da faixa ou `cursor` inválido. `401` sem token."
       },
       "event": [
         {

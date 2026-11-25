@@ -2,7 +2,7 @@
 
 Hackathon POSTECH SOAT (Fase 5). Envie um vídeo, o sistema extrai os frames e devolve um `.zip` para download.
 
-> Status: **envio e listagem** ([#23](https://github.com/LucazDenadai/projeto-fiapx/issues/23)): cadastro, login com limite de tentativas, envio do Vídeo em streaming para o volume (com linha na outbox), listagem paginada e consulta. O Processamento ainda não existe: os Vídeos ficam em `recebido`.
+> Status: cadastro, login, envio, Processamento, download do Zip de frames, retry com DLQ, e-mail de Falha definitiva e retenção prontos. Faltam a escala, a observabilidade, o CD e os diagramas ([issues abertas](https://github.com/LucazDenadai/projeto-fiapx/issues)).
 
 ## Como rodar
 
