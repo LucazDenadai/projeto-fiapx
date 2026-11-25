@@ -2,7 +2,7 @@
 
 Hackathon POSTECH SOAT (Fase 5). Envie um vídeo, o sistema extrai os frames e devolve um `.zip` para download.
 
-> Status: cadastro, login, envio, Processamento, download do Zip de frames, retry com DLQ, e-mail de Falha definitiva e retenção prontos. Faltam a escala, a observabilidade, o CD e os diagramas ([issues abertas](https://github.com/LucazDenadai/projeto-fiapx/issues)).
+> Status: cadastro, login, envio, Processamento, download do Zip de frames, retry com DLQ, e-mail de Falha definitiva, retenção e escala prontos. Faltam a observabilidade, o CD e os diagramas ([issues abertas](https://github.com/LucazDenadai/projeto-fiapx/issues)).
 
 ## Como rodar
 
@@ -17,6 +17,17 @@ docker compose ps             # api, worker e notifier ficam healthy
 Só a API publica porta (`API_PORT`, padrão 8080). A porta interna `9090` de cada processo (`/healthz`, `/readyz`) fica na rede do Compose.
 
 Para usar a API, importe no Postman a coleção e o ambiente de [`docs/api/`](docs/api/) e rode as requisições em ordem: o **Login** salva o token, que vai sozinho nas rotas de Vídeo. O **Enviar vídeo** usa `docs/api/video.mp4`, um vídeo de 5 s versionado no repositório. O **Aguardar conclusão** repete a consulta até o Vídeo ficar `concluido`, e o **Baixar zip** traz o Zip de frames; no Postman, rode a coleção pelo Collection Runner. Quando um Vídeo falha, o Notifier manda o e-mail de aviso; no Compose ele chega no Mailpit, em http://localhost:8025.
+
+### Escala
+
+O Compose sobe 2 Workers, cada um com um ffmpeg por vez e limite de CPU e memória. Para mais vazão, mais réplicas:
+
+```sh
+docker compose up -d --scale worker=4
+go run ./cmd/pico              # 20 envios em paralelo, com o progresso até o fim
+```
+
+O pico usa a API como qualquer cliente: cadastra (ou reusa) Usuários `pico-N@fiapx.local`, 5 Vídeos para cada por causa da cota. Opções em `go run ./cmd/pico -h`.
 
 Testes: `go test -race ./...` sobe Postgres, RabbitMQ e Redis descartáveis com testcontainers (Docker precisa estar rodando); `go test -short ./...` pula a integração. O CI fica em [`.github/workflows/ci.yml`](.github/workflows/ci.yml).
 

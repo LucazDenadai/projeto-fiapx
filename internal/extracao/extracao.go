@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strconv"
 	"strings"
@@ -123,10 +124,15 @@ func (e *Extrator) Sondar(ctx context.Context, arquivo string) (Sonda, error) {
 // vídeo do arquivo e devolve os caminhos dos frames, em ordem. dir deve estar
 // vazio.
 func (e *Extrator) ExtrairFrames(ctx context.Context, arquivo, dir string) ([]string, error) {
-	args := append([]string{"-nostdin", "-hide_banner", "-v", "error"}, entradaRestrita...)
+	// Sem isto o ffmpeg abre uma thread por núcleo do host, ignorando o limite
+	// de CPU do container: com 1 CPU, só gasta memória e tempo. O GOMAXPROCS do
+	// Go segue esse limite.
+	threads := strconv.Itoa(runtime.GOMAXPROCS(0))
+	args := append([]string{"-nostdin", "-hide_banner", "-v", "error", "-filter_threads", threads, "-threads", threads}, entradaRestrita...)
 	args = append(args,
 		"-i", "file:"+arquivo,
 		"-map", "0:v:0",
+		"-threads", threads,
 		"-vf", "fps=1",
 		"-f", "image2",
 		"file:"+filepath.Join(dir, prefixoFrame+"%05d"+extensao),
