@@ -29,7 +29,7 @@ Todo PR passa pelo CI. A cada merge na `main`, o [CD](.github/workflows/cd.yml) 
 
 Para uma versão, crie uma tag git num commit que já passou pelo CD: `git tag v1.0.0 && git push origin v1.0.0` repete o smoke e publica `1.0.0`, sem build novo.
 
-O smoke também roda contra a stack local (pede Node e ffmpeg): `scripts/smoke.sh`, ou `BASE_URL=http://localhost:<API_PORT> scripts/smoke.sh` com outra porta.
+O smoke também roda contra a stack local (pede Node e ffmpeg): `scripts/smoke.sh`, ou `BASE_URL=http://localhost:<API_PORT> scripts/smoke.sh` com outra porta. O [`scripts/recriacao.sh`](scripts/recriacao.sh), que o CD roda em seguida, recria o RabbitMQ com um Vídeo na fila e confere que ele termina.
 
 ### Escala
 
