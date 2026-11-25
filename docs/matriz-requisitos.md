@@ -5,7 +5,7 @@ Cada requisito do [enunciado](enunciado.md) cruzado com o estado do projeto base
 - **Obrigatório**: o enunciado exige ("deve", entregável).
 - **Recomendado**: aparece como "stack recomendada" ou "pode"; entra se houver justificativa.
 - **ADR**: decisão a tomar; numeração definitiva só quando o ADR for aceito em [`adr/`](adr/).
-- Status de todas as linhas: **aberto** até as ambiguidades (seção 4) serem resolvidas.
+- Ambiguidades (seção 4): todas resolvidas. Situação e evidência de cada requisito: [seção 7](#7-conferência-final).
 
 ## 1. Requisitos funcionais
 
@@ -80,3 +80,37 @@ Não estão no enunciado, mas "boas práticas" é o critério do desafio; cada u
 ## 6. Fora de escopo (até decisão em contrário)
 - Kubernetes, nuvem pública e Terraform: plataforma decidida é Docker Compose.
 - Reaproveitar artefatos da Fase 4: projeto novo.
+
+## 7. Conferência final
+
+Feita em 2026-11-25, com as imagens `1.0.0` e os testes do repositório. "Ao vivo" é o ensaio do [roteiro](roteiro-video.md) na stack do Compose.
+
+| ID | Situação | Evidência |
+|---|---|---|
+| RF01 | Atendido | 2 Workers por padrão. Ao vivo: 20 Vídeos em paralelo, com 2 e depois 4 em Processamento ao mesmo tempo |
+| RF02 | Atendido | Ao vivo: 20 de 20 concluídos com um Worker morto no meio; envio com o RabbitMQ parado dá `202` e conclui quando ele volta. `scripts/recriacao.sh` no CD. `TestRelay_BrokerForaMantemPendenteEPublicaQuandoVolta`, `TestProcessar_QuedaAntesDoCommitDevolveEReentregaRefaz`, `TestWorker_MorrendoEmLoopTerminaFalhou`. A conferência achou e corrigiu a perda da fila na recriação do RabbitMQ ([#51](https://github.com/LucazDenadai/projeto-fiapx/issues/51)) |
+| RF03 | Atendido | `TestRotaDeVideo_RecusaTokenAusenteExpiradoOuComOutroAlgoritmo`, `TestCadastro_*`, `TestLogin_*`, `TestLimite_*` |
+| RF04 | Atendido | `TestListagem_*`, `TestConsulta_VideoAlheioDa404IgualAInexistente` |
+| RF05 | Atendido | Ao vivo: Vídeo corrompido vira `video_invalido` e o e-mail chega no Mailpit. `TestNotifier_EmailDeFalhaChegaNoMailpit` |
+| RT01 | Atendido | Postgres e volume nomeado; `down` e `up` sem `-v` preservam Vídeos, zips e filas |
+| RT02 | Atendido | `--scale worker=N`: 20 Vídeos em 76,6 s com 2 Workers e em 47,8 s com 4 |
+| RT03 | Atendido | Repositório público, issues e PRs |
+| RT04 | Atendido | Testes unitários e de integração (testcontainers) com `-race` no CI; newman no CD |
+| RT05 | Atendido | `ci.yml` e `cd.yml`; imagens no GHCR; tag `v1.0.0` publicada como `1.0.0` |
+| E01 | Atendido | 16 ADRs, [diagramas](diagramas/README.md), README, coleção do Postman |
+| E02 | Atendido | `migrations/` e `docker-compose.yml` |
+| E03 | Atendido | https://github.com/LucazDenadai/projeto-fiapx |
+| E04 | **Falta gravar** | [Roteiro](roteiro-video.md) pronto e ensaiado |
+| S01–S05 | Adotados | Seção 3 |
+
+| Achado | Situação | Evidência |
+|---|---|---|
+| Q01, Q02 | Resolvido | Nada é servido como estático; `TestDownload_SemTokenDa401`, `TestDownload_ZipDeOutroUsuarioDa404` |
+| Q03 | Resolvido | Caminho gerado do `video_id`; `TestOriginal_CaminhoDentroDoDiretorioDoVideo`, `TestEnvio_NomeOriginalSemSeparadoresNemControle` |
+| Q04 | Resolvido | `TestEnvio_NaoVideoDa415SemCriarNada`, `TestSondarEExtrair_*` |
+| Q05 | Resolvido | `TestEnvio_AcimaDoTetoDa413ApagaOTemporario`, `TestCota_*`, duração máxima em `TestProcessar_FalhaPermanente` |
+| Q06 | Resolvido | `TestProcessar_SaidaDoFFmpegSoNoLog` |
+| Q07 | Resolvido | `TestExtrairFrames_TimeoutMataOFFmpeg` |
+| Q08 | Resolvido | `TestNovoLogger_CadaLinhaEhJSONComOServico`; `correlation_id` em todo o fluxo |
+| Q09 | Resolvido | `docker/*.Dockerfile`: multi-stage, não-root, distroless (Worker em base mínima com ffmpeg) |
+| Q10 | Resolvido | `TestPortaInterna_*`, `TestProcessar_DesligamentoDevolveSemFalhar`, configuração por `.env` |
