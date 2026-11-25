@@ -15,6 +15,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/prometheus/client_golang/prometheus"
 
 	"github.com/LucazDenadai/projeto-fiapx/internal/armazenamento"
 	"github.com/LucazDenadai/projeto-fiapx/internal/videos"
@@ -56,6 +57,8 @@ type Config struct {
 	RetencaoOutbox time.Duration // das linhas publicadas (padrão 7 dias)
 	LoteOutbox     int           // linhas apagadas por vez (padrão 1000)
 	Agora          func() time.Time
+	// Registro recebe as métricas do limpador; nil não registra.
+	Registro prometheus.Registerer
 }
 
 func (c Config) comPadroes() Config {
@@ -83,12 +86,13 @@ type Limpador struct {
 	pool *pgxpool.Pool
 	arqs Armazenamento
 	cfg  Config
+	met  *metricas
 	log  *slog.Logger
 }
 
 // Novo monta o Limpador; ele só roda em Iniciar ou Rodada.
 func Novo(pool *pgxpool.Pool, arqs Armazenamento, cfg Config, log *slog.Logger) *Limpador {
-	return &Limpador{pool: pool, arqs: arqs, cfg: cfg.comPadroes(), log: log}
+	return &Limpador{pool: pool, arqs: arqs, cfg: cfg.comPadroes(), met: novasMetricas(cfg.Registro), log: log}
 }
 
 // Iniciar faz uma rodada agora e outra a cada intervalo, em segundo plano, até
@@ -158,6 +162,12 @@ func (l *Limpador) Rodada(ctx context.Context) (r Resultado, err error) {
 	}
 	defer func() { err = errors.Join(err, liberarLock(ctx, conn)) }()
 
+	inicio := time.Now()
+	// Mesmo com erro, o que foi apagado conta.
+	defer func() {
+		l.met.contar(r)
+		l.met.duracao.Observe(time.Since(inicio).Seconds())
+	}()
 	agora := l.cfg.Agora()
 	err = errors.Join(
 		l.limparVolume(ctx, conn, agora, &r),

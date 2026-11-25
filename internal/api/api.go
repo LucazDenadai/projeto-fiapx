@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/prometheus/client_golang/prometheus"
 
 	"github.com/LucazDenadai/projeto-fiapx/internal/armazenamento"
 	"github.com/LucazDenadai/projeto-fiapx/internal/auth"
@@ -36,7 +37,12 @@ type Config struct {
 	// CotaVideos limita os Vídeos não terminais por Usuário (ADR-0011); zero
 	// ou negativo usa o padrão (5).
 	CotaVideos int
+	// Registro recebe as métricas da API; nil não registra.
+	Registro prometheus.Registerer
 }
+
+// prefixoVideos leva às rotas protegidas.
+const prefixoVideos = "/videos"
 
 // Novo devolve o roteador público. Falha se a configuração estiver incompleta,
 // por exemplo sem o segredo do JWT.
@@ -64,6 +70,7 @@ func Novo(cfg Config) (http.Handler, error) {
 		videos:          videos.NovoServico(cfg.Pool, armazenamento.NovoVolume(cfg.DirDados), cfg.CotaVideos, cfg.Log),
 		tamanhoMaxEnvio: cfg.TamanhoMaxEnvio,
 		timeoutEnvio:    cfg.TimeoutEnvio,
+		metricas:        novasMetricas(cfg.Registro),
 	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /usuarios", a.cadastrar)
@@ -76,9 +83,9 @@ func Novo(cfg Config) (http.Handler, error) {
 	rotasVideo.HandleFunc("GET /videos/{id}", a.consultar)
 	rotasVideo.HandleFunc("GET /videos/{id}/zip", a.baixar)
 	protegidas := servico.Exigir(rotasVideo)
-	mux.Handle("/videos", protegidas)
-	mux.Handle("/videos/", protegidas)
-	return mux, nil
+	mux.Handle(prefixoVideos, protegidas)
+	mux.Handle(prefixoVideos+"/", protegidas)
+	return a.metricas.medir(mux, rotasVideo), nil
 }
 
 type aplicacao struct {
@@ -88,6 +95,7 @@ type aplicacao struct {
 	videos          *videos.Servico
 	tamanhoMaxEnvio int64
 	timeoutEnvio    time.Duration
+	metricas        *metricas
 }
 
 // ipDoCliente vem só de RemoteAddr: a API é exposta direto, sem proxy, e o
@@ -101,10 +109,11 @@ func ipDoCliente(r *http.Request) string {
 }
 
 // responderSeBloqueado responde 429 com Retry-After se b estourou o limite.
-func responderSeBloqueado(w http.ResponseWriter, b limite.Bloqueio) bool {
+func (a *aplicacao) responderSeBloqueado(w http.ResponseWriter, b limite.Bloqueio) bool {
 	if !b.Bloqueado {
 		return false
 	}
+	a.metricas.limitadas.WithLabelValues(causaTentativas).Inc()
 	segundos := int(math.Ceil(b.Esperar.Seconds()))
 	w.Header().Set("Retry-After", strconv.Itoa(max(segundos, 1)))
 	responderErro(w, http.StatusTooManyRequests, "tentativas demais, tente de novo mais tarde")
@@ -120,7 +129,7 @@ type credenciais struct {
 }
 
 func lerJSON(w http.ResponseWriter, r *http.Request, destino any) bool {
-	r.Body = http.MaxBytesReader(w, r.Body, tamMaxCorpoJSON)
+	r.Body = http.MaxBytesReader(respostaOriginal(w), r.Body, tamMaxCorpoJSON)
 	if err := json.NewDecoder(r.Body).Decode(destino); err != nil {
 		responderErro(w, http.StatusBadRequest, "corpo JSON inválido")
 		return false
@@ -145,7 +154,7 @@ func (a *aplicacao) erroInterno(w http.ResponseWriter, r *http.Request, err erro
 }
 
 func (a *aplicacao) cadastrar(w http.ResponseWriter, r *http.Request) {
-	if responderSeBloqueado(w, a.tentativas.Cadastro(r.Context(), ipDoCliente(r))) {
+	if a.responderSeBloqueado(w, a.tentativas.Cadastro(r.Context(), ipDoCliente(r))) {
 		return
 	}
 	var c credenciais
@@ -178,7 +187,7 @@ func (a *aplicacao) entrar(w http.ResponseWriter, r *http.Request) {
 	if !lerJSON(w, r, &c) {
 		return
 	}
-	if responderSeBloqueado(w, a.tentativas.Login(r.Context(), c.Email, ipDoCliente(r))) {
+	if a.responderSeBloqueado(w, a.tentativas.Login(r.Context(), c.Email, ipDoCliente(r))) {
 		return
 	}
 	token, expira, err := a.auth.Entrar(r.Context(), c.Email, c.Senha)

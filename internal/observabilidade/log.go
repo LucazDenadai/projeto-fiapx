@@ -1,5 +1,5 @@
 // Package observabilidade reúne o que todo processo expõe para ser observado:
-// logs JSON e a porta interna com /healthz e /readyz (ADR-0010).
+// logs JSON e a porta interna com /metrics, /healthz e /readyz (ADR-0010).
 package observabilidade
 
 import (

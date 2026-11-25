@@ -10,10 +10,10 @@ import (
 )
 
 func TestSondar(t *testing.T) {
-	saudavel := httptest.NewServer(observabilidade.HandlerInterno(observabilidade.NovoLogger("t", io.Discard),
+	saudavel := httptest.NewServer(observabilidade.HandlerInterno(observabilidade.NovoLogger("t", io.Discard), observabilidade.NovoRegistro(),
 		observabilidade.Dependencia{Nome: "postgres", Verificar: ok}))
 	defer saudavel.Close()
-	doente := httptest.NewServer(observabilidade.HandlerInterno(observabilidade.NovoLogger("t", io.Discard),
+	doente := httptest.NewServer(observabilidade.HandlerInterno(observabilidade.NovoLogger("t", io.Discard), observabilidade.NovoRegistro(),
 		observabilidade.Dependencia{Nome: "postgres", Verificar: quebrada}))
 	defer doente.Close()
 

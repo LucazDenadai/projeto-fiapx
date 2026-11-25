@@ -18,6 +18,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/prometheus/client_golang/prometheus"
 
 	"github.com/LucazDenadai/projeto-fiapx/internal/extracao"
 	"github.com/LucazDenadai/projeto-fiapx/internal/mensageria"
@@ -63,6 +64,8 @@ type Config struct {
 	// o orçamento, a mensagem volta à fila. Somado ao timeout do ffmpeg, tem
 	// de ficar abaixo do consumer_timeout do RabbitMQ (ADR-0004).
 	Retry retentativa.Politica
+	// Registro recebe as métricas do Worker; nil não registra.
+	Registro prometheus.Registerer
 }
 
 // Processador trata as mensagens da fila processamento.
@@ -71,6 +74,7 @@ type Processador struct {
 	arqs Armazenamento
 	ext  Extrator
 	cfg  Config
+	met  *metricas
 	log  *slog.Logger
 }
 
@@ -85,7 +89,7 @@ func NovoProcessador(pool *pgxpool.Pool, arqs Armazenamento, ext Extrator, cfg C
 	if cfg.DuracaoMaxima <= 0 {
 		cfg.DuracaoMaxima = DuracaoMaximaPadrao
 	}
-	return &Processador{repo: repositorio{pool: pool}, arqs: arqs, ext: ext, cfg: cfg, log: log}
+	return &Processador{repo: repositorio{pool: pool}, arqs: arqs, ext: ext, cfg: cfg, met: novasMetricas(cfg.Registro), log: log}
 }
 
 // LimparTrabalho apaga as sobras de Processamentos interrompidos por uma queda
@@ -140,10 +144,12 @@ func (p *Processador) Processar(ctx context.Context, corpo []byte) mensageria.Re
 		return mensageria.Devolver
 	}
 
+	p.met.emAndamento.Inc()
+	defer p.met.emAndamento.Dec()
 	inicio := time.Now()
-	err = p.processar(ctx, id, correlationID, log)
+	err = p.processar(ctx, id, correlationID, inicio, log)
 	if perm, ok := errors.AsType[*falhaPermanente](err); ok {
-		return p.falhar(ctx, id, correlationID, perm, log)
+		return p.falhar(ctx, id, correlationID, perm, inicio, log)
 	}
 	if err != nil {
 		log.WarnContext(ctx, "processamento interrompido; mensagem devolvida", "erro", err)
@@ -175,6 +181,7 @@ func (p *Processador) ProcessarDLQ(ctx context.Context, corpo []byte) mensageria
 		log.InfoContext(ctx, "dlq: vídeo já terminal ou inexistente; confirmada sem evento")
 		return mensageria.Confirmar
 	}
+	p.met.falhou(motivo.ErroInterno)
 	log.ErrorContext(ctx, "falha definitiva: tentativas esgotadas", "motivo", motivo.ErroInterno)
 	p.apagarOriginal(ctx, id, log)
 	return mensageria.Confirmar
@@ -216,7 +223,7 @@ func (f *falhaPermanente) Unwrap() error { return f.err }
 // falhar registra a Falha definitiva e confirma a mensagem, sem passar pela
 // DLQ (ADR-0004). Se a transação não sair, a mensagem volta à fila e a
 // reentrega chega à mesma conclusão.
-func (p *Processador) falhar(ctx context.Context, id uuid.UUID, correlationID string, perm *falhaPermanente, log *slog.Logger) mensageria.Resultado {
+func (p *Processador) falhar(ctx context.Context, id uuid.UUID, correlationID string, perm *falhaPermanente, inicio time.Time, log *slog.Logger) mensageria.Resultado {
 	falhou, err := retentativa.Tentar(ctx, p.cfg.Retry, log, "registrar falha", transitorio, func() (bool, error) {
 		return p.repo.falhar(ctx, id, correlationID, perm.motivo)
 	})
@@ -228,6 +235,8 @@ func (p *Processador) falhar(ctx context.Context, id uuid.UUID, correlationID st
 		log.InfoContext(ctx, "outra entrega já terminou o vídeo", "motivo", perm.motivo, "erro", perm.err)
 		return mensageria.Confirmar
 	}
+	p.met.falhou(perm.motivo)
+	p.met.duracao.Observe(time.Since(inicio).Seconds())
 	// O detalhe, inclusive a saída do ffmpeg, fica só aqui: nunca no evento
 	// nem na listagem.
 	log.WarnContext(ctx, "falha definitiva", "motivo", perm.motivo, "erro", perm.err)
@@ -246,7 +255,7 @@ func (p *Processador) apagarOriginal(ctx context.Context, id uuid.UUID, log *slo
 
 // processar extrai os frames num temporário próprio, publica o zip e marca o
 // Vídeo concluído. O temporário some ao final, com sucesso ou erro.
-func (p *Processador) processar(ctx context.Context, id uuid.UUID, correlationID string, log *slog.Logger) error {
+func (p *Processador) processar(ctx context.Context, id uuid.UUID, correlationID string, inicio time.Time, log *slog.Logger) error {
 	dir, err := os.MkdirTemp(p.cfg.DirTrabalho, id.String()+"-*")
 	if err != nil {
 		return fmt.Errorf("criar temporário: %w", err)
@@ -283,7 +292,10 @@ func (p *Processador) processar(ctx context.Context, id uuid.UUID, correlationID
 	if err != nil {
 		return err
 	}
-	if !concluiu {
+	if concluiu {
+		p.met.concluiu()
+		p.met.duracao.Observe(time.Since(inicio).Seconds())
+	} else {
 		log.InfoContext(ctx, "outra entrega já terminou o vídeo")
 	}
 	p.apagarOriginal(ctx, id, log)
@@ -303,7 +315,9 @@ func (p *Processador) extrair(ctx context.Context, original, dir string) ([]stri
 	if sonda.Duracao > p.cfg.DuracaoMaxima {
 		return nil, muitoLongo(fmt.Sprintf("duração %v", sonda.Duracao), p.cfg.DuracaoMaxima)
 	}
+	inicio := time.Now()
 	frames, err := p.ext.ExtrairFrames(ctxExtracao, original, dir)
+	p.met.ffmpeg.Observe(time.Since(inicio).Seconds())
 	if err != nil {
 		return nil, classificar(ctx, err)
 	}

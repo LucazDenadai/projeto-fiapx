@@ -9,6 +9,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/redis/go-redis/v9"
 )
 
@@ -44,13 +46,16 @@ type Config struct {
 	Prefixo string
 	// Timeout de cada chamada ao Redis; zero usa TimeoutPadrao.
 	Timeout time.Duration
+	// Registro recebe a métrica de falhas; nil não registra.
+	Registro prometheus.Registerer
 }
 
 // Tentativas aplica as Regras de login e cadastro.
 type Tentativas struct {
-	redis *redis.Client
-	cfg   Config
-	log   *slog.Logger
+	redis  *redis.Client
+	cfg    Config
+	falhas prometheus.Counter
+	log    *slog.Logger
 }
 
 // Novo monta as Tentativas com um cliente Redis próprio. O cliente respeita o
@@ -62,7 +67,11 @@ func Novo(opcoes *redis.Options, cfg Config, log *slog.Logger) *Tentativas {
 	}
 	o := *opcoes
 	o.ContextTimeoutEnabled = true
-	return &Tentativas{redis: redis.NewClient(&o), cfg: cfg, log: log}
+	falhas := promauto.With(cfg.Registro).NewCounter(prometheus.CounterOpts{
+		Name: "fiapx_redis_falhas_total",
+		Help: "Chamadas ao Redis do limite de tentativas que falharam (seguiu sem limite).",
+	})
+	return &Tentativas{redis: redis.NewClient(&o), cfg: cfg, falhas: falhas, log: log}
 }
 
 // Fechar encerra as conexões com o Redis.
@@ -97,9 +106,11 @@ func (t *Tentativas) LoginComSucesso(ctx context.Context, email string) {
 	if !ok {
 		return
 	}
+	ctxPedido := ctx
 	ctx, cancel := context.WithTimeout(ctx, t.cfg.Timeout)
 	defer cancel()
 	if err := t.redis.Del(ctx, t.chave(sufixo)).Err(); err != nil {
+		t.contarFalha(ctxPedido)
 		t.log.ErrorContext(ctx, "limite de tentativas: zerar contador no redis", "erro", err)
 	}
 }
@@ -109,12 +120,21 @@ func (t *Tentativas) Cadastro(ctx context.Context, ip string) Bloqueio {
 	return t.contar(ctx, "cadastro:ip:"+ip, t.cfg.CadastroPorIP)
 }
 
+// contarFalha conta a falha do Redis, salvo se foi o cliente que desistiu do
+// pedido.
+func (t *Tentativas) contarFalha(ctxPedido context.Context) {
+	if ctxPedido.Err() == nil {
+		t.falhas.Inc()
+	}
+}
+
 func (t *Tentativas) chave(sufixo string) string {
 	return t.cfg.Prefixo + "limite:" + sufixo
 }
 
 // contar soma 1 na janela fixa da chave (INCR + EXPIRE NX no mesmo pipeline).
 func (t *Tentativas) contar(ctx context.Context, sufixo string, r Regra) Bloqueio {
+	ctxPedido := ctx
 	ctx, cancel := context.WithTimeout(ctx, t.cfg.Timeout)
 	defer cancel()
 	chave := t.chave(sufixo)
@@ -127,6 +147,7 @@ func (t *Tentativas) contar(ctx context.Context, sufixo string, r Regra) Bloquei
 		return nil
 	})
 	if err != nil {
+		t.contarFalha(ctxPedido)
 		// Fail-open (ADR-0009): o Redis é proteção auxiliar.
 		t.log.ErrorContext(ctx, "limite de tentativas: redis indisponível, seguindo sem limite", "erro", err)
 		return Bloqueio{}

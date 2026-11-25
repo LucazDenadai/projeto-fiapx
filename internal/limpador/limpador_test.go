@@ -8,11 +8,14 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/testutil"
 
 	"github.com/LucazDenadai/projeto-fiapx/internal/armazenamento"
 	"github.com/LucazDenadai/projeto-fiapx/internal/banco"
@@ -414,4 +417,33 @@ func TestIniciar_RodaNaSubidaERepete(t *testing.T) {
 		t.Fatal(err)
 	}
 	esperarSumir(c.dir(segundo))
+}
+
+func TestMetricas_ItensPorTipoEDuracao(t *testing.T) {
+	c := novoCenario(t)
+	reg := prometheus.NewRegistry()
+	c.arquivo(filepath.Join(c.dir(c.video("concluido", em(-time.Hour))), "frames.zip"), 8*24*time.Hour)
+	c.arquivo(filepath.Join(c.dir(uuid.New()), "original"), 2*time.Hour)
+	l := c.limpador(c.volume(), limpador.Config{Registro: reg})
+
+	for range 2 {
+		if _, err := l.Rodada(t.Context()); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	if err := testutil.GatherAndCompare(reg, strings.NewReader(`
+# HELP fiapx_limpador_itens_total Itens apagados pelo limpador, por tipo.
+# TYPE fiapx_limpador_itens_total counter
+fiapx_limpador_itens_total{tipo="orfao"} 1
+fiapx_limpador_itens_total{tipo="original"} 0
+fiapx_limpador_itens_total{tipo="outbox"} 0
+fiapx_limpador_itens_total{tipo="temporario"} 0
+fiapx_limpador_itens_total{tipo="zip"} 1
+`), "fiapx_limpador_itens_total"); err != nil {
+		t.Error(err)
+	}
+	if n, _ := integracao.Metrica(t, reg, "fiapx_limpador_rodada_segundos"); n != 2 {
+		t.Errorf("rodadas medidas = %v, quero 2", n)
+	}
 }

@@ -1,4 +1,4 @@
-// Comando api: porta pública de negócio, porta interna de saúde e o subcomando
+// Comando api: porta pública de negócio, porta interna de saúde e métricas e o subcomando
 // migrate, usado pelo serviço de execução única do Compose (ADR-0016).
 //
 //	api              sobe a API
@@ -128,6 +128,8 @@ func servir(ctx context.Context, log *slog.Logger) error {
 	}, log)
 	defer pararRelay()
 
+	registro := observabilidade.NovoRegistro()
+	cfgLimite.Registro = registro
 	tentativas := limite.Novo(opcoesRedis, cfgLimite, log)
 	defer func() { _ = tentativas.Fechar() }()
 
@@ -140,6 +142,7 @@ func servir(ctx context.Context, log *slog.Logger) error {
 		TamanhoMaxEnvio: tamanhoMaxMB << 20,
 		TimeoutEnvio:    timeoutEnvio,
 		CotaVideos:      int(cota),
+		Registro:        registro,
 	})
 	if err != nil {
 		return err
@@ -152,7 +155,7 @@ func servir(ctx context.Context, log *slog.Logger) error {
 		ReadTimeout: 30 * time.Second,
 		IdleTimeout: 2 * time.Minute,
 	}
-	interno := processo.ServidorInterno(log,
+	interno := processo.ServidorInterno(log, registro,
 		observabilidade.Dependencia{Nome: "postgres", Verificar: banco.Verificacao(pool)},
 		observabilidade.Dependencia{Nome: "rabbitmq", Verificar: mensageria.Verificacao(amqpURL)},
 		observabilidade.Dependencia{Nome: "volume", Verificar: armazenamento.Verificacao(dados)},

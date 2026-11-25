@@ -1,7 +1,7 @@
 // Comando worker: consome a fila processamento (extrai os frames e publica o
 // Zip de frames) e a processamento.dlq (Falha definitiva das tentativas
 // esgotadas), roda o relay da outbox e o limpador e expõe a porta interna de
-// saúde.
+// saúde e métricas.
 //
 //	worker              sobe o Worker
 //	worker healthcheck  sonda o próprio /readyz (healthcheck do Compose)
@@ -129,12 +129,15 @@ func servir(ctx context.Context, log *slog.Logger) error {
 	pararRelay := outbox.Subir(ctx, pool, amqpURL, outbox.Config{Intervalo: intervaloOutbox, Topologia: topologia}, log)
 	defer pararRelay()
 
+	registro := observabilidade.NovoRegistro()
+	registro.MustRegister(outbox.NovoColetor(pool, log))
 	volume := armazenamento.NovoVolume(dados)
 	ctxLimpador, pararLimpador := context.WithCancel(ctx)
 	esperarLimpador := limpador.Novo(pool, volume, limpador.Config{
 		Intervalo:      intervaloLimpador,
 		IdadeOrfao:     idadeOrfao,
 		RetencaoOutbox: retencaoOutbox,
+		Registro:       registro,
 	}, log).Iniciar(ctxLimpador)
 	defer func() {
 		pararLimpador()
@@ -149,6 +152,7 @@ func servir(ctx context.Context, log *slog.Logger) error {
 			TimeoutExtracao: timeoutFFmpeg,
 			DuracaoMaxima:   duracaoMaxima,
 			Retry:           retentativa.Politica{Inicial: backoffInicial, Orcamento: orcamentoRetry},
+			Registro:        registro,
 		}, log)
 	if err := proc.LimparTrabalho(ctx); err != nil {
 		return err
@@ -177,7 +181,7 @@ func servir(ctx context.Context, log *slog.Logger) error {
 		consumo.Wait()
 	}()
 
-	interno := processo.ServidorInterno(log,
+	interno := processo.ServidorInterno(log, registro,
 		observabilidade.Dependencia{Nome: "postgres", Verificar: banco.Verificacao(pool)},
 		observabilidade.Dependencia{Nome: "rabbitmq", Verificar: mensageria.Verificacao(amqpURL)},
 		observabilidade.Dependencia{Nome: "volume", Verificar: armazenamento.Verificacao(dados)},

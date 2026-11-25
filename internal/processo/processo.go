@@ -13,10 +13,12 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
+
 	"github.com/LucazDenadai/projeto-fiapx/internal/observabilidade"
 )
 
-// PortaInternaPadrao é a porta de /healthz e /readyz (ADR-0010), nunca publicada.
+// PortaInternaPadrao é a porta de /metrics, /healthz e /readyz (ADR-0010), nunca publicada.
 const PortaInternaPadrao = ":9090"
 
 // Variavel lê uma variável de ambiente, com valor padrão.
@@ -110,10 +112,10 @@ func Servir(ctx context.Context, log *slog.Logger, servidores ...*http.Server) e
 }
 
 // ServidorInterno monta o servidor da porta interna com as dependências dadas.
-func ServidorInterno(log *slog.Logger, deps ...observabilidade.Dependencia) *http.Server {
+func ServidorInterno(log *slog.Logger, metricas prometheus.Gatherer, deps ...observabilidade.Dependencia) *http.Server {
 	return &http.Server{
 		Addr:              Variavel("INTERNAL_ADDR", PortaInternaPadrao),
-		Handler:           observabilidade.HandlerInterno(log, deps...),
+		Handler:           observabilidade.HandlerInterno(log, metricas, deps...),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 }

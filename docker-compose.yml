@@ -1,6 +1,7 @@
 # Stack do FIAP X. Suba com:  cp .env.example .env && docker compose up -d
-# Só a porta pública da API sai do Compose; a porta interna (9090: /healthz,
-# /readyz) e as dependências ficam na rede interna (ADR-0001, ADR-0010).
+# A porta pública da API, o Grafana e o Mailpit (estes só em localhost) saem do
+# Compose; a porta interna (9090: /metrics, /healthz, /readyz), o Prometheus e
+# as outras dependências ficam na rede interna (ADR-0001, ADR-0010).
 
 x-postgres-url: &postgres-url "postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?sslmode=disable"
 x-rabbitmq-url: &rabbitmq-url "amqp://${RABBITMQ_USER}:${RABBITMQ_PASSWORD}@rabbitmq:5672/"
@@ -201,7 +202,45 @@ services:
       <<: *healthcheck
       test: ["CMD", "/mailpit", "readyz"]
 
+  # Métricas (ADR-0010): só na rede interna; quem mostra é o Grafana.
+  prometheus:
+    image: prom/prometheus:v3.16.0
+    command: ["--config.file=/etc/prometheus/prometheus.yml", "--storage.tsdb.path=/prometheus", "--storage.tsdb.retention.time=7d"]
+    volumes:
+      - ./observabilidade/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus:/prometheus
+    healthcheck:
+      <<: *healthcheck
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:9090/-/ready"]
+
+  # Datasource e dashboard vêm dos arquivos versionados: nada é configurado
+  # pela interface. http://localhost:3000, com a credencial do .env.
+  grafana:
+    image: grafana/grafana:13.3.2
+    ports:
+      - "127.0.0.1:${GRAFANA_PORT:-3000}:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_USER:?defina no .env}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:?defina no .env}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+      GF_ANALYTICS_CHECK_FOR_PLUGIN_UPDATES: "false"
+      GF_PLUGINS_PREINSTALL_DISABLED: "true"
+      GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /var/lib/grafana/dashboards/fiapx.json
+    volumes:
+      - ./observabilidade/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./observabilidade/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    healthcheck:
+      <<: *healthcheck
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3000/api/health"]
+      start_period: 20s
+    depends_on:
+      prometheus:
+        condition: service_healthy
+
 volumes:
   postgres:
   rabbitmq:
   dados:
+  prometheus:
