@@ -1,4 +1,4 @@
-// Comando api: porta pública de negócio, porta interna de saúde e o subcomando
+// Comando api: porta pública de negócio, porta interna de saúde e métricas e o subcomando
 // migrate, usado pelo serviço de execução única do Compose (ADR-0016).
 //
 //	api              sobe a API

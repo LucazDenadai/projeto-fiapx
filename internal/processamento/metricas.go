@@ -19,8 +19,8 @@ type metricas struct {
 
 func novasMetricas(registro prometheus.Registerer) *metricas {
 	f := promauto.With(registro)
-	// Até 600 s, o timeout padrão do ffmpeg.
-	buckets := []float64{.5, 1, 2, 5, 10, 20, 30, 60, 120, 300, 600}
+	// O ffmpeg tem 600 s por padrão; o resto é zip e novas tentativas.
+	buckets := []float64{.5, 1, 2, 5, 10, 20, 30, 60, 120, 300, 600, 900}
 	m := &metricas{
 		terminados: f.NewCounterVec(prometheus.CounterOpts{
 			Name: "fiapx_processamentos_total",
@@ -28,7 +28,7 @@ func novasMetricas(registro prometheus.Registerer) *metricas {
 		}, []string{"resultado", "motivo"}),
 		duracao: f.NewHistogram(prometheus.HistogramOpts{
 			Name:    "fiapx_processamento_segundos",
-			Help:    "Duração do Processamento que terminou o Vídeo, da entrega ao fim.",
+			Help:    "Duração do Processamento que terminou o Vídeo, da leitura do original ao registro do resultado.",
 			Buckets: buckets,
 		}),
 		ffmpeg: f.NewHistogram(prometheus.HistogramOpts{

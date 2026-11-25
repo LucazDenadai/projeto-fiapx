@@ -129,7 +129,7 @@ type credenciais struct {
 }
 
 func lerJSON(w http.ResponseWriter, r *http.Request, destino any) bool {
-	r.Body = http.MaxBytesReader(w, r.Body, tamMaxCorpoJSON)
+	r.Body = http.MaxBytesReader(respostaOriginal(w), r.Body, tamMaxCorpoJSON)
 	if err := json.NewDecoder(r.Body).Decode(destino); err != nil {
 		responderErro(w, http.StatusBadRequest, "corpo JSON inválido")
 		return false

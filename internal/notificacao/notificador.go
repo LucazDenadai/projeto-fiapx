@@ -89,7 +89,7 @@ func (n *Notificador) Notificar(ctx context.Context, corpo []byte) mensageria.Re
 		ctxEnvio, cancelar := context.WithTimeout(ctx, n.cfg.TimeoutEnvio)
 		defer cancelar()
 		err := n.env.Enviar(ctxEnvio, email.De, email.Para, email.Mensagem)
-		if err != nil {
+		if err != nil && ctx.Err() == nil { // o Notifier desligando não é falha do SMTP
 			n.falhasSMTP.Inc()
 		}
 		return err

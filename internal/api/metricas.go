@@ -57,12 +57,18 @@ func (m *metricas) medir(proximo, protegidas *http.ServeMux) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		inicio := time.Now()
 		resp := &respostaMedida{ResponseWriter: w, status: http.StatusOK}
-		// Em defer: o download abortado pelo cliente também conta.
+		terminou := false
+		// Em defer: o download abortado pelo cliente também conta. Um panic
+		// antes da resposta derruba a conexão; para o cliente não houve 200.
 		defer func() {
+			if !terminou && !resp.enviou {
+				resp.status = http.StatusInternalServerError
+			}
 			m.requisicoes.WithLabelValues(rota(proximo, protegidas, r), strconv.Itoa(resp.status)).
 				Observe(time.Since(inicio).Seconds())
 		}()
 		proximo.ServeHTTP(resp, r)
+		terminou = true
 	})
 }
 
@@ -104,3 +110,13 @@ func (r *respostaMedida) ReadFrom(leitor io.Reader) (int64, error) {
 // Unwrap deixa o http.ResponseController chegar ao ResponseWriter de verdade
 // (o prazo de leitura do envio depende disso).
 func (r *respostaMedida) Unwrap() http.ResponseWriter { return r.ResponseWriter }
+
+// respostaOriginal desfaz o embrulho para o http.MaxBytesReader, que não usa o
+// Unwrap: só com o ResponseWriter do servidor ele fecha a conexão ao passar do
+// limite, em vez de ler o resto do corpo.
+func respostaOriginal(w http.ResponseWriter) http.ResponseWriter {
+	if m, ok := w.(*respostaMedida); ok {
+		return m.ResponseWriter
+	}
+	return w
+}

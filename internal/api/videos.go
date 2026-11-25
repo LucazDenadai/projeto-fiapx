@@ -76,7 +76,7 @@ func (a *aplicacao) enviar(w http.ResponseWriter, r *http.Request) {
 	if err := http.NewResponseController(w).SetReadDeadline(time.Now().Add(a.timeoutEnvio)); err != nil {
 		a.log.WarnContext(r.Context(), "definir prazo de leitura do envio", "erro", err)
 	}
-	r.Body = http.MaxBytesReader(w, r.Body, a.tamanhoMaxEnvio)
+	r.Body = http.MaxBytesReader(respostaOriginal(w), r.Body, a.tamanhoMaxEnvio)
 	partes, err := r.MultipartReader()
 	if err != nil {
 		responderErro(w, http.StatusBadRequest, errUmArquivo)

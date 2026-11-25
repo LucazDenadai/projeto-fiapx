@@ -33,9 +33,9 @@ O pico usa a API como qualquer cliente: cadastra (ou reusa) Usuários `pico-N@fi
 
 ### Observabilidade
 
-O Grafana abre em http://localhost:3000, com o `GRAFANA_USER` e a `GRAFANA_PASSWORD` do `.env`, já no dashboard **FIAP X**: filas, vazão, falhas por motivo, duração do Processamento, API, outbox, Notificações e limpador. O Prometheus coleta a cada 15 s. Com o dashboard aberto, rode o pico e depois escale os Workers para ver a fila subir e escoar.
+O Grafana abre em http://localhost:3000 (`GRAFANA_PORT`), com o `GRAFANA_USER` e a `GRAFANA_PASSWORD` do `.env`, já no dashboard **FIAP X**: filas, vazão, falhas por motivo, duração do Processamento, API, outbox, Notificações e limpador. O Prometheus coleta a cada 15 s. Com o dashboard aberto, rode o pico e depois escale os Workers para ver a fila subir e escoar.
 
-Os logs são JSON no stdout: `docker compose logs api worker notifier | grep <correlation_id>` segue um Vídeo pelos três processos.
+Os logs são JSON no stdout: `docker compose logs api worker notifier | grep <correlation_id>` segue um Vídeo pelos processos (o Notifier só entra na Falha definitiva).
 
 ## Índice
 

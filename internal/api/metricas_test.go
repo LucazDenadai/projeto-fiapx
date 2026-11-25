@@ -1,6 +1,7 @@
 package api_test
 
 import (
+	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -127,5 +128,24 @@ func TestMetricas_FalhaDoRedis(t *testing.T) {
 
 	if n, _ := integracao.Metrica(t, reg, "fiapx_redis_falhas_total"); n != 1 {
 		t.Errorf("fiapx_redis_falhas_total = %v, quero 1", n)
+	}
+}
+
+// O medidor não pode esconder do servidor que o corpo passou do limite: ele
+// fecha a conexão em vez de ler o resto do envio.
+func TestMetricas_CorpoGrandeDemaisFechaAConexao(t *testing.T) {
+	c, _ := subirAPI(t)
+	corpo := io.MultiReader(strings.NewReader(`{"email":"`), strings.NewReader(strings.Repeat("a", 8<<10))) // sem Content-Length
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodPost, c.srv.URL+"/login", corpo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	res, err := c.srv.Client().Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = res.Body.Close() }()
+	if res.StatusCode != http.StatusBadRequest || !res.Close {
+		t.Errorf("status %d, Connection: close = %v; quero 400 com a conexão fechada", res.StatusCode, res.Close)
 	}
 }

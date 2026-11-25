@@ -106,10 +106,11 @@ func (t *Tentativas) LoginComSucesso(ctx context.Context, email string) {
 	if !ok {
 		return
 	}
+	ctxPedido := ctx
 	ctx, cancel := context.WithTimeout(ctx, t.cfg.Timeout)
 	defer cancel()
 	if err := t.redis.Del(ctx, t.chave(sufixo)).Err(); err != nil {
-		t.falhas.Inc()
+		t.contarFalha(ctxPedido)
 		t.log.ErrorContext(ctx, "limite de tentativas: zerar contador no redis", "erro", err)
 	}
 }
@@ -119,12 +120,21 @@ func (t *Tentativas) Cadastro(ctx context.Context, ip string) Bloqueio {
 	return t.contar(ctx, "cadastro:ip:"+ip, t.cfg.CadastroPorIP)
 }
 
+// contarFalha conta a falha do Redis, salvo se foi o cliente que desistiu do
+// pedido.
+func (t *Tentativas) contarFalha(ctxPedido context.Context) {
+	if ctxPedido.Err() == nil {
+		t.falhas.Inc()
+	}
+}
+
 func (t *Tentativas) chave(sufixo string) string {
 	return t.cfg.Prefixo + "limite:" + sufixo
 }
 
 // contar soma 1 na janela fixa da chave (INCR + EXPIRE NX no mesmo pipeline).
 func (t *Tentativas) contar(ctx context.Context, sufixo string, r Regra) Bloqueio {
+	ctxPedido := ctx
 	ctx, cancel := context.WithTimeout(ctx, t.cfg.Timeout)
 	defer cancel()
 	chave := t.chave(sufixo)
@@ -137,7 +147,7 @@ func (t *Tentativas) contar(ctx context.Context, sufixo string, r Regra) Bloquei
 		return nil
 	})
 	if err != nil {
-		t.falhas.Inc()
+		t.contarFalha(ctxPedido)
 		// Fail-open (ADR-0009): o Redis é proteção auxiliar.
 		t.log.ErrorContext(ctx, "limite de tentativas: redis indisponível, seguindo sem limite", "erro", err)
 		return Bloqueio{}
