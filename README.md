@@ -54,7 +54,8 @@ Os logs são JSON no stdout: `docker compose logs api worker notifier | grep <co
 | Documento | Descrição |
 |---|---|
 | [Enunciado](docs/enunciado.md) ([PDF](docs/enunciado.pdf)) | Requisitos oficiais do hackathon |
-| [Matriz de requisitos](docs/matriz-requisitos.md) | Requisito × problema do projeto base × decisão pendente |
+| [Matriz de requisitos](docs/matriz-requisitos.md) | Requisito × problema do projeto base × decisão, com a conferência final |
+| [Roteiro do vídeo](docs/roteiro-video.md) | Vídeo de entrega (E04): preparação, passos e tempos |
 
 ### Arquitetura (ADRs)
 Em `docs/adr/`. Cada um resolve ambiguidades A1–A12 da [matriz](docs/matriz-requisitos.md#4-ambiguidades-a-resolver-viram-adrs); progresso no [mapa de decisões](https://github.com/LucazDenadai/projeto-fiapx/issues/1).
