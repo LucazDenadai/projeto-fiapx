@@ -7,6 +7,9 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
+
 	"github.com/LucazDenadai/projeto-fiapx/internal/mensageria"
 	"github.com/LucazDenadai/projeto-fiapx/internal/retentativa"
 )
@@ -24,6 +27,8 @@ type Config struct {
 	Remetente    string               // endereço simples, ex.: nao-responda@fiapx.local
 	TimeoutEnvio time.Duration        // por tentativa (padrão TimeoutEnvioPadrao)
 	Retry        retentativa.Politica // novas tentativas do SMTP no processo (ADR-0004)
+	// Registro recebe as métricas do Notifier; nil não registra.
+	Registro prometheus.Registerer
 }
 
 // Notificador trata as mensagens da fila notificacao.
@@ -31,6 +36,9 @@ type Notificador struct {
 	env Enviador
 	cfg Config
 	log *slog.Logger
+
+	enviadas   prometheus.Counter
+	falhasSMTP prometheus.Counter
 }
 
 // NovoNotificador monta o Notificador.
@@ -38,7 +46,18 @@ func NovoNotificador(env Enviador, cfg Config, log *slog.Logger) *Notificador {
 	if cfg.TimeoutEnvio <= 0 {
 		cfg.TimeoutEnvio = TimeoutEnvioPadrao
 	}
-	return &Notificador{env: env, cfg: cfg, log: log}
+	f := promauto.With(cfg.Registro)
+	return &Notificador{
+		env: env, cfg: cfg, log: log,
+		enviadas: f.NewCounter(prometheus.CounterOpts{
+			Name: "fiapx_notificacoes_enviadas_total",
+			Help: "Notificações de Falha definitiva enviadas por e-mail.",
+		}),
+		falhasSMTP: f.NewCounter(prometheus.CounterOpts{
+			Name: "fiapx_smtp_falhas_total",
+			Help: "Tentativas de envio recusadas pelo SMTP ou sem resposta dele.",
+		}),
+	}
 }
 
 // Notificar é o mensageria.Tratador da fila notificacao. Confirma quando o
@@ -69,12 +88,17 @@ func (n *Notificador) Notificar(ctx context.Context, corpo []byte) mensageria.Re
 	err = retentativa.TentarSo(ctx, n.cfg.Retry, log, "enviar e-mail", retentativa.Sempre, func() error {
 		ctxEnvio, cancelar := context.WithTimeout(ctx, n.cfg.TimeoutEnvio)
 		defer cancelar()
-		return n.env.Enviar(ctxEnvio, email.De, email.Para, email.Mensagem)
+		err := n.env.Enviar(ctxEnvio, email.De, email.Para, email.Mensagem)
+		if err != nil {
+			n.falhasSMTP.Inc()
+		}
+		return err
 	})
 	if err != nil {
 		log.ErrorContext(ctx, "e-mail não enviado; mensagem devolvida (passado o delivery-limit, fica na notificacao.dlq)", "erro", err)
 		return mensageria.Devolver
 	}
+	n.enviadas.Inc()
 	log.InfoContext(ctx, "notificação de falha enviada", "motivo", ev.Motivo)
 	return mensageria.Confirmar
 }

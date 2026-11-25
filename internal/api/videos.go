@@ -129,6 +129,7 @@ func (a *aplicacao) enviar(w http.ResponseWriter, r *http.Request) {
 		a.recusarEnvio(w, r, err)
 		return
 	}
+	a.metricas.aceitos.Inc()
 	w.Header().Set("Location", "/videos/"+v.ID.String())
 	responderJSON(w, http.StatusAccepted, map[string]string{"id": v.ID.String(), "status": v.Status})
 }
@@ -136,6 +137,7 @@ func (a *aplicacao) enviar(w http.ResponseWriter, r *http.Request) {
 // recusarEnvio responde 429 à cota excedida e 500 ao resto.
 func (a *aplicacao) recusarEnvio(w http.ResponseWriter, r *http.Request, err error) {
 	if errors.Is(err, videos.ErrCotaExcedida) {
+		a.metricas.limitadas.WithLabelValues(causaCota).Inc()
 		responderErro(w, http.StatusTooManyRequests, videos.ErrCotaExcedida.Error())
 		return
 	}

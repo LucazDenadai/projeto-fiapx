@@ -9,6 +9,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/redis/go-redis/v9"
 )
 
@@ -44,13 +46,16 @@ type Config struct {
 	Prefixo string
 	// Timeout de cada chamada ao Redis; zero usa TimeoutPadrao.
 	Timeout time.Duration
+	// Registro recebe a métrica de falhas; nil não registra.
+	Registro prometheus.Registerer
 }
 
 // Tentativas aplica as Regras de login e cadastro.
 type Tentativas struct {
-	redis *redis.Client
-	cfg   Config
-	log   *slog.Logger
+	redis  *redis.Client
+	cfg    Config
+	falhas prometheus.Counter
+	log    *slog.Logger
 }
 
 // Novo monta as Tentativas com um cliente Redis próprio. O cliente respeita o
@@ -62,7 +67,11 @@ func Novo(opcoes *redis.Options, cfg Config, log *slog.Logger) *Tentativas {
 	}
 	o := *opcoes
 	o.ContextTimeoutEnabled = true
-	return &Tentativas{redis: redis.NewClient(&o), cfg: cfg, log: log}
+	falhas := promauto.With(cfg.Registro).NewCounter(prometheus.CounterOpts{
+		Name: "fiapx_redis_falhas_total",
+		Help: "Chamadas ao Redis do limite de tentativas que falharam (seguiu sem limite).",
+	})
+	return &Tentativas{redis: redis.NewClient(&o), cfg: cfg, falhas: falhas, log: log}
 }
 
 // Fechar encerra as conexões com o Redis.
@@ -100,6 +109,7 @@ func (t *Tentativas) LoginComSucesso(ctx context.Context, email string) {
 	ctx, cancel := context.WithTimeout(ctx, t.cfg.Timeout)
 	defer cancel()
 	if err := t.redis.Del(ctx, t.chave(sufixo)).Err(); err != nil {
+		t.falhas.Inc()
 		t.log.ErrorContext(ctx, "limite de tentativas: zerar contador no redis", "erro", err)
 	}
 }
@@ -127,6 +137,7 @@ func (t *Tentativas) contar(ctx context.Context, sufixo string, r Regra) Bloquei
 		return nil
 	})
 	if err != nil {
+		t.falhas.Inc()
 		// Fail-open (ADR-0009): o Redis é proteção auxiliar.
 		t.log.ErrorContext(ctx, "limite de tentativas: redis indisponível, seguindo sem limite", "erro", err)
 		return Bloqueio{}

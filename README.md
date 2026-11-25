@@ -2,7 +2,7 @@
 
 Hackathon POSTECH SOAT (Fase 5). Envie um vídeo, o sistema extrai os frames e devolve um `.zip` para download.
 
-> Status: cadastro, login, envio, Processamento, download do Zip de frames, retry com DLQ, e-mail de Falha definitiva, retenção e escala prontos. Faltam a observabilidade, o CD e os diagramas ([issues abertas](https://github.com/LucazDenadai/projeto-fiapx/issues)).
+> Status: cadastro, login, envio, Processamento, download do Zip de frames, retry com DLQ, e-mail de Falha definitiva, retenção, escala e observabilidade prontos. Faltam o CD e os diagramas ([issues abertas](https://github.com/LucazDenadai/projeto-fiapx/issues)).
 
 ## Como rodar
 
@@ -14,7 +14,7 @@ docker compose up -d --build  # migrate roda antes de API e Worker
 docker compose ps             # api, worker e notifier ficam healthy
 ```
 
-Só a API publica porta (`API_PORT`, padrão 8080). A porta interna `9090` de cada processo (`/healthz`, `/readyz`) fica na rede do Compose.
+A API publica a porta `API_PORT` (padrão 8080). O Grafana (3000) e o Mailpit (8025) só atendem em localhost. A porta interna `9090` de cada processo (`/metrics`, `/healthz`, `/readyz`) e o Prometheus ficam na rede do Compose.
 
 Para usar a API, importe no Postman a coleção e o ambiente de [`docs/api/`](docs/api/) e rode as requisições em ordem: o **Login** salva o token, que vai sozinho nas rotas de Vídeo. O **Enviar vídeo** usa `docs/api/video.mp4`, um vídeo de 5 s versionado no repositório. O **Aguardar conclusão** repete a consulta até o Vídeo ficar `concluido`, e o **Baixar zip** traz o Zip de frames; no Postman, rode a coleção pelo Collection Runner. Quando um Vídeo falha, o Notifier manda o e-mail de aviso; no Compose ele chega no Mailpit, em http://localhost:8025.
 
@@ -30,6 +30,12 @@ go run ./cmd/pico              # 20 envios em paralelo, com o progresso até o f
 ```
 
 O pico usa a API como qualquer cliente: cadastra (ou reusa) Usuários `pico-N@fiapx.local`, 5 Vídeos para cada por causa da cota. Na primeira vez, mais de 25 envios exigem aumentar o `LIMITE_CADASTRO_IP_MAX` (5 cadastros por hora). Com outra porta, use `-url`; as demais opções estão em `go run ./cmd/pico -h`.
+
+### Observabilidade
+
+O Grafana abre em http://localhost:3000, com o `GRAFANA_USER` e a `GRAFANA_PASSWORD` do `.env`, já no dashboard **FIAP X**: filas, vazão, falhas por motivo, duração do Processamento, API, outbox, Notificações e limpador. O Prometheus coleta a cada 15 s. Com o dashboard aberto, rode o pico e depois escale os Workers para ver a fila subir e escoar.
+
+Os logs são JSON no stdout: `docker compose logs api worker notifier | grep <correlation_id>` segue um Vídeo pelos três processos.
 
 ## Índice
 
@@ -68,6 +74,7 @@ Ficarão em `docs/diagramas/` (nenhum ainda).
 | Documento | Descrição |
 |---|---|
 | [Coleção do Postman](docs/api/fiapx.postman_collection.json) ([ambiente](docs/api/fiapx.postman_environment.json)) | Interface e documentação da API: rotas, códigos de resposta e token salvo pelo login (ADR-0013) |
+| [Dashboard e coleta](observabilidade/) | Configuração do Prometheus e dashboard do Grafana provisionados (ADR-0010) |
 | [Glossário](GLOSSARY.md) | Vocabulário do domínio (Usuário, Vídeo, Processamento, Zip de frames) |
 | [`legacy/`](legacy/) | Projeto base entregue no enunciado (referência do "antes") |
 | [Handoff](docs/HANDOFF-fase5.md) | Contexto inicial da fase |

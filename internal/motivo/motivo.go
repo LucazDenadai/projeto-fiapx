@@ -4,6 +4,11 @@
 // interno (ADR-0004, ADR-0011).
 package motivo
 
+import (
+	"maps"
+	"slices"
+)
+
 // Códigos do Motivo da falha. O CHECK da coluna videos.motivo aceita só estes.
 const (
 	VideoInvalido   = "video_invalido"
@@ -20,6 +25,9 @@ var textos = map[string]string{
 	TempoExcedido:   "o processamento passou do tempo máximo",
 	ErroInterno:     "não conseguimos processar, tente novamente",
 }
+
+// Todos devolve todos os códigos, sem ordem definida.
+func Todos() []string { return slices.Collect(maps.Keys(textos)) }
 
 // Texto devolve a explicação pública do código. Código desconhecido dá o
 // texto de ErroInterno: o Usuário nunca vê um código cru nem texto vazio.

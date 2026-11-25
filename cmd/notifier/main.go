@@ -77,10 +77,12 @@ func servir(ctx context.Context, log *slog.Logger) error {
 		Usuario:  os.Getenv("SMTP_USUARIO"),
 		Senha:    os.Getenv("SMTP_SENHA"),
 	})
+	registro := observabilidade.NovoRegistro()
 	n := notificacao.NovoNotificador(smtp, notificacao.Config{
 		Remetente:    remetente,
 		TimeoutEnvio: timeoutEnvio,
 		Retry:        retentativa.Politica{Inicial: backoffInicial, Orcamento: orcamentoRetry},
+		Registro:     registro,
 	}, log)
 
 	ctxConsumo, pararConsumo := context.WithCancel(ctx)
@@ -97,7 +99,7 @@ func servir(ctx context.Context, log *slog.Logger) error {
 		consumo.Wait()
 	}()
 
-	interno := processo.ServidorInterno(log,
+	interno := processo.ServidorInterno(log, registro,
 		observabilidade.Dependencia{Nome: "rabbitmq", Verificar: mensageria.Verificacao(amqpURL)},
 		observabilidade.Dependencia{Nome: "smtp", Verificar: notificacao.Verificacao(smtpEndereco)},
 	)

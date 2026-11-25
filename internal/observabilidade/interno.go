@@ -6,6 +6,9 @@ import (
 	"log/slog"
 	"net/http"
 	"time"
+
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
 // timeoutVerificacao limita cada verificação do /readyz, para o probe não travar
@@ -19,11 +22,16 @@ type Dependencia struct {
 	Verificar func(ctx context.Context) error
 }
 
-// HandlerInterno serve a porta interna: /healthz (processo vivo) e
-// /readyz (todas as dependências respondem). O detalhe da falha vai ao log;
+// HandlerInterno serve a porta interna: /metrics (do registro dado), /healthz
+// (processo vivo) e /readyz (todas as dependências respondem). O detalhe da falha vai ao log;
 // a resposta cita só o nome da dependência.
-func HandlerInterno(log *slog.Logger, deps ...Dependencia) http.Handler {
+func HandlerInterno(log *slog.Logger, metricas prometheus.Gatherer, deps ...Dependencia) http.Handler {
 	mux := http.NewServeMux()
+	mux.Handle("GET /metrics", promhttp.HandlerFor(metricas, promhttp.HandlerOpts{
+		// Uma métrica com erro não derruba as outras.
+		ErrorHandling: promhttp.ContinueOnError,
+		ErrorLog:      slog.NewLogLogger(log.Handler(), slog.LevelWarn),
+	}))
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
 		responder(w, http.StatusOK, map[string]any{"status": "ok"})
 	})

@@ -9,6 +9,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/prometheus/client_golang/prometheus"
+
 	"github.com/LucazDenadai/projeto-fiapx/internal/observabilidade"
 )
 
@@ -26,7 +28,7 @@ func get(t *testing.T, h http.Handler, caminho string) (int, string) {
 }
 
 func TestPortaInterna_TudoRespondendo(t *testing.T) {
-	h := observabilidade.HandlerInterno(observabilidade.NovoLogger("api", io.Discard),
+	h := observabilidade.HandlerInterno(observabilidade.NovoLogger("api", io.Discard), observabilidade.NovoRegistro(),
 		observabilidade.Dependencia{Nome: "postgres", Verificar: ok},
 		observabilidade.Dependencia{Nome: "rabbitmq", Verificar: ok},
 	)
@@ -41,7 +43,7 @@ func TestPortaInterna_TudoRespondendo(t *testing.T) {
 
 func TestPortaInterna_DependenciaFora(t *testing.T) {
 	var log strings.Builder
-	h := observabilidade.HandlerInterno(observabilidade.NovoLogger("api", &log),
+	h := observabilidade.HandlerInterno(observabilidade.NovoLogger("api", &log), observabilidade.NovoRegistro(),
 		observabilidade.Dependencia{Nome: "postgres", Verificar: quebrada},
 		observabilidade.Dependencia{Nome: "rabbitmq", Verificar: ok},
 	)
@@ -62,5 +64,18 @@ func TestPortaInterna_DependenciaFora(t *testing.T) {
 
 	if code, _ := get(t, h, "/healthz"); code != http.StatusOK {
 		t.Errorf("/healthz = %d com dependência fora, quero 200", code)
+	}
+}
+
+func TestPortaInterna_Metricas(t *testing.T) {
+	registro := observabilidade.NovoRegistro()
+	c := prometheus.NewCounter(prometheus.CounterOpts{Name: "fiapx_teste_total", Help: "teste"})
+	registro.MustRegister(c)
+	c.Inc()
+	h := observabilidade.HandlerInterno(observabilidade.NovoLogger("api", io.Discard), registro)
+
+	code, corpo := get(t, h, "/metrics")
+	if code != http.StatusOK || !strings.Contains(corpo, "fiapx_teste_total 1") || !strings.Contains(corpo, "go_goroutines") {
+		t.Errorf("/metrics = %d, quero 200 com as métricas do processo e do registro:\n%.400s", code, corpo)
 	}
 }

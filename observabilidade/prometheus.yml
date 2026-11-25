@@ -1,0 +1,34 @@
+# Coleta do ADR-0010. Só portas internas do Compose; nada daqui é publicado.
+global:
+  scrape_interval: 15s
+  scrape_timeout: 5s
+
+scrape_configs:
+  # dns_sd: uma série por réplica, inclusive com --scale worker=N.
+  - job_name: api
+    dns_sd_configs:
+      - names: [api]
+        type: A
+        port: 9090
+        refresh_interval: 5s
+  - job_name: worker
+    dns_sd_configs:
+      - names: [worker]
+        type: A
+        port: 9090
+        refresh_interval: 5s
+  - job_name: notifier
+    dns_sd_configs:
+      - names: [notifier]
+        type: A
+        port: 9090
+        refresh_interval: 5s
+
+  # Plugin rabbitmq_prometheus, já ligado na imagem oficial. O endpoint
+  # detalhado traz as filas uma a uma, só com as métricas de profundidade.
+  - job_name: rabbitmq
+    metrics_path: /metrics/detailed
+    params:
+      family: [queue_coarse_metrics]
+    static_configs:
+      - targets: [rabbitmq:15692]
