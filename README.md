@@ -2,7 +2,7 @@
 
 Hackathon POSTECH SOAT (Fase 5). Envie um vídeo, o sistema extrai os frames e devolve um `.zip` para download.
 
-> Status: cadastro, login, envio, Processamento, download do Zip de frames, retry com DLQ, e-mail de Falha definitiva, retenção, escala, observabilidade e CD prontos. Faltam os diagramas ([issues abertas](https://github.com/LucazDenadai/projeto-fiapx/issues)).
+> Status: cadastro, login, envio, Processamento, download do Zip de frames, retry com DLQ, e-mail de Falha definitiva, retenção, escala, observabilidade, CD e diagramas prontos.
 
 ## Como rodar
 
@@ -79,7 +79,11 @@ Em `docs/adr/`. Cada um resolve ambiguidades A1–A12 da [matriz](docs/matriz-re
 | [0016](docs/adr/0016-testes-de-integracao-e-migrations.md) | Testes de integração com testcontainers-go e migrations com goose | accepted | Testes e migrations (RT04, E02) |
 
 ### Diagramas
-Ficarão em `docs/diagramas/` (nenhum ainda).
+| Diagrama | O que mostra |
+|---|---|
+| [Componentes](docs/diagramas/README.md#componentes) | Containers do Compose e suas conexões |
+| [Fluxo de um Vídeo](docs/diagramas/README.md#fluxo-de-um-vídeo) | Do envio ao zip ou à Falha definitiva, com outbox, filas, DLQ e e-mail |
+| [Estados do Vídeo](docs/diagramas/README.md#estados-do-vídeo) | Transições do ADR-0014 |
 
 ### Outros
 | Documento | Descrição |
