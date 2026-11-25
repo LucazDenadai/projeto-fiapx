@@ -47,7 +47,9 @@ O [ADR-0014](0014-ciclo-de-vida-do-video.md) tirou o reprocessamento, então o o
 ## Consequências
 
 - O disco ocupado fica limitado a: originais dos Vídeos em andamento (cota de 5 por Usuário), mais os zips dos últimos 7 dias, mais temporários de até 1h.
-- A tabela de Vídeos ganha `zip_expira_em`, com índice para a busca do limpador. A coleção do Postman documenta o `410`.
+- A tabela de Vídeos ganha `zip_expira_em`, sem índice. O limpador parte dos diretórios que existem no volume e consulta esses ids pela chave primária, então o custo da rodada acompanha o disco ocupado. Buscar por `zip_expira_em` no banco devolveria, a cada rodada, todo o histórico já limpo, porque o registro do Vídeo fica para sempre.
+- O diretório de um Vídeo terminal é apagado quando fica vazio, para as rodadas seguintes não o percorrerem de novo.
+- A coleção do Postman documenta o `410`.
 - O limpador ganha métricas (ADR-0010): itens apagados por tipo e duração da rodada.
 - Com `--scale worker=N`, só uma réplica limpa por rodada. Se ela cair no meio, o lock é liberado com a conexão, e a próxima rodada continua do ponto em que parou.
 - Os testes cobrem cada item da rodada com relógio injetado, e o lock com duas instâncias concorrentes.

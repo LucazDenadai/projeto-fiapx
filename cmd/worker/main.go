@@ -1,6 +1,7 @@
 // Comando worker: consome a fila processamento (extrai os frames e publica o
 // Zip de frames) e a processamento.dlq (Falha definitiva das tentativas
-// esgotadas), roda o relay da outbox e expõe a porta interna de saúde.
+// esgotadas), roda o relay da outbox e o limpador e expõe a porta interna de
+// saúde.
 //
 //	worker              sobe o Worker
 //	worker healthcheck  sonda o próprio /readyz (healthcheck do Compose)
@@ -20,6 +21,7 @@ import (
 	"github.com/LucazDenadai/projeto-fiapx/internal/armazenamento"
 	"github.com/LucazDenadai/projeto-fiapx/internal/banco"
 	"github.com/LucazDenadai/projeto-fiapx/internal/extracao"
+	"github.com/LucazDenadai/projeto-fiapx/internal/limpador"
 	"github.com/LucazDenadai/projeto-fiapx/internal/mensageria"
 	"github.com/LucazDenadai/projeto-fiapx/internal/observabilidade"
 	"github.com/LucazDenadai/projeto-fiapx/internal/outbox"
@@ -74,6 +76,19 @@ func servir(ctx context.Context, log *slog.Logger) error {
 	if err != nil {
 		return err
 	}
+	// Limpador (ADR-0015).
+	intervaloLimpador, err := processo.Duracao("LIMPADOR_INTERVALO", limpador.IntervaloPadrao)
+	if err != nil {
+		return err
+	}
+	idadeOrfao, err := processo.Duracao("LIMPADOR_IDADE_ORFAO", limpador.IdadeOrfaoPadrao)
+	if err != nil {
+		return err
+	}
+	retencaoOutbox, err := processo.Duracao("OUTBOX_RETENCAO", limpador.RetencaoOutboxPadrao)
+	if err != nil {
+		return err
+	}
 	duracaoMaxima, err := processo.Duracao("VIDEO_DURACAO_MAXIMA", processamento.DuracaoMaximaPadrao)
 	if err != nil {
 		return err
@@ -107,7 +122,19 @@ func servir(ctx context.Context, log *slog.Logger) error {
 	pararRelay := outbox.Subir(ctx, pool, amqpURL, outbox.Config{Intervalo: intervaloOutbox, Topologia: topologia}, log)
 	defer pararRelay()
 
-	proc := processamento.NovoProcessador(pool, armazenamento.NovoVolume(dados),
+	volume := armazenamento.NovoVolume(dados)
+	ctxLimpador, pararLimpador := context.WithCancel(ctx)
+	esperarLimpador := limpador.Novo(pool, volume, limpador.Config{
+		Intervalo:      intervaloLimpador,
+		IdadeOrfao:     idadeOrfao,
+		RetencaoOutbox: retencaoOutbox,
+	}, log).Iniciar(ctxLimpador)
+	defer func() {
+		pararLimpador()
+		esperarLimpador()
+	}()
+
+	proc := processamento.NovoProcessador(pool, volume,
 		extracao.Novo(extracao.Config{Timeout: timeoutFFmpeg}),
 		processamento.Config{
 			DirTrabalho:     trabalho,

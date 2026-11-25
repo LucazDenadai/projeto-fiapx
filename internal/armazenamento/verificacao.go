@@ -7,11 +7,14 @@ import (
 	"os"
 )
 
+// prefixoReadyz é o do temporário da checagem, na raiz do volume.
+const prefixoReadyz = ".readyz-"
+
 // Verificacao devolve a checagem de readiness do volume: o diretório existe e
 // aceita escrita (cria e apaga um arquivo temporário).
 func Verificacao(dir string) func(context.Context) error {
 	return func(context.Context) error {
-		f, err := os.CreateTemp(dir, ".readyz-*")
+		f, err := os.CreateTemp(dir, prefixoReadyz+"*")
 		if err != nil {
 			return fmt.Errorf("gravar no volume %s: %w", dir, err)
 		}

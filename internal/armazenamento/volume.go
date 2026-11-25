@@ -24,11 +24,12 @@ func NovoVolume(dir string) *Volume {
 
 func (v *Volume) dirVideo(id uuid.UUID) string {
 	// uuid.UUID só formata hexadecimal e hífens: não há como escapar do dir.
-	return filepath.Join(v.dir, "videos", id.String())
+	return filepath.Join(v.dir, dirVideos, id.String())
 }
 
-// Nomes dos arquivos de um Vídeo no diretório dele.
+// Nomes no volume: o diretório dos Vídeos e os arquivos de cada um.
 const (
+	dirVideos    = "videos"
 	nomeOriginal = "original"
 	nomeZip      = "frames.zip"
 )
@@ -87,11 +88,15 @@ func (v *Volume) ApagarOriginal(_ context.Context, id uuid.UUID) error {
 	return nil
 }
 
+// prefixoTemporario é o do temporário em que o arquivo nome é gravado; o
+// limpador reconhece as sobras por ele.
+func prefixoTemporario(nome string) string { return "." + nome + "-" }
+
 // gravarAtomico grava num temporário no próprio dir e publica com rename
 // (ADR-0005). Se escrever falhar, o temporário é removido e o destino fica
 // como estava.
 func gravarAtomico(dir, nome string, escrever func(io.Writer) error) (err error) {
-	tmp, err := os.CreateTemp(dir, "."+nome+"-*")
+	tmp, err := os.CreateTemp(dir, prefixoTemporario(nome)+"*")
 	if err != nil {
 		return fmt.Errorf("criar temporário: %w", err)
 	}

@@ -187,6 +187,32 @@ func TestDownload_ZipExpiradoDa410(t *testing.T) {
 	}
 }
 
+// O Vídeo fica para sempre no histórico: sem o link, mas com o prazo que passou
+// (ADR-0015).
+func TestListagem_ZipExpiradoMostraOPrazoSemDownload(t *testing.T) {
+	c, pool := subirAPI(t)
+	ana := c.usuario("ana@ex.com")
+	id := c.enviarVideo(ana, "ferias.mp4")
+	expira := time.Now().Add(-time.Minute).UTC().Truncate(time.Second)
+	c.concluir(pool, id, expira)
+
+	lista := c.fazer(http.MethodGet, "/videos", ana, nil)
+
+	itens, _ := lista.corpo["videos"].([]any)
+	if len(itens) != 1 {
+		t.Fatalf("listagem = %v, quero o Vídeo expirado nela", lista.corpo)
+	}
+	consulta := c.fazer(http.MethodGet, "/videos/"+id, ana, nil)
+	for nome, v := range map[string]map[string]any{"listagem": itens[0].(map[string]any), "consulta": consulta.corpo} {
+		if v["status"] != "concluido" || v["zip_expira_em"] != expira.Format(time.RFC3339) {
+			t.Errorf("%s: %v, quero concluido com zip_expira_em %s", nome, v, expira.Format(time.RFC3339))
+		}
+		if link, tem := v["download"]; tem {
+			t.Errorf("%s: download = %v, quero nenhum", nome, link)
+		}
+	}
+}
+
 // Zip apagado pelo limpador entre a consulta ao banco e a abertura: é a
 // expiração vista do volume.
 func TestDownload_ZipSumidoDoVolumeDa410(t *testing.T) {

@@ -189,9 +189,12 @@ func paraJSON(v videos.Video, agora time.Time) videoJSON {
 	if v.Status == videos.StatusFalhou {
 		j.Motivo, j.MotivoTexto = v.Motivo, motivo.Texto(v.Motivo)
 	}
-	if v.ZipDisponivel(agora) {
+	if v.ZipExpiraEm != nil {
 		expira := v.ZipExpiraEm.UTC()
-		j.Download, j.ZipExpiraEm = "/videos/"+j.ID+"/zip", &expira
+		j.ZipExpiraEm = &expira
+	}
+	if v.ZipDisponivel(agora) {
+		j.Download = "/videos/" + j.ID + "/zip"
 	}
 	return j
 }
