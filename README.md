@@ -9,13 +9,13 @@ Hackathon POSTECH SOAT (Fase 5). Envie um vídeo, o sistema extrai os frames e d
 Com as imagens publicadas no GHCR, basta o Docker (Compose v2) e o clone do repositório:
 
 ```sh
-cp .env.example .env    # troque as senhas e o JWT_SECRET
+cp .env.example .env              # troque as senhas e o JWT_SECRET
 docker compose pull
-docker compose up -d    # migrate roda antes de API e Worker
-docker compose ps       # api, worker e notifier ficam healthy
+docker compose up -d --no-build   # migrate roda antes de API e Worker
+docker compose ps                 # api, worker e notifier ficam healthy
 ```
 
-`TAG` no `.env` escolhe a versão: `main` (padrão), `sha-<commit>` ou `X.Y.Z`. Para rodar o código local, troque os dois comandos do meio por `docker compose up -d --build`: o [`compose.override.yml`](compose.override.yml) gera as imagens. Os testes e o pico pedem também Go e ffmpeg no PATH.
+As imagens são `linux/amd64`. `TAG` no `.env` escolhe a versão: `main` (padrão), `sha-<commit>` ou `X.Y.Z`. Para rodar o código local, troque os dois comandos do meio por `docker compose up -d --build`: o [`compose.override.yml`](compose.override.yml) gera as imagens. Os testes e o pico pedem também Go e ffmpeg no PATH.
 
 A API publica a porta `API_PORT` (padrão 8080). O Grafana (3000) e o Mailpit (8025) só atendem em localhost. A porta interna `9090` de cada processo (`/metrics`, `/healthz`, `/readyz`) e o Prometheus ficam na rede do Compose.
 
@@ -25,11 +25,11 @@ Testes: `go test -race ./...` sobe Postgres, RabbitMQ e Redis descartáveis com 
 
 ### CI/CD
 
-Todo PR passa pelo CI. A cada merge na `main`, o [CD](.github/workflows/cd.yml) repete o CI, publica `ghcr.io/lucazdenadai/fiapx-{api,worker,notifier}:sha-<commit>`, sobe a stack no runner com essas imagens e roda o [`scripts/smoke.sh`](scripts/smoke.sh): a coleção do Postman inteira, com o newman e um vídeo gerado pelo ffmpeg. Só com o smoke verde a tag `main` das imagens avança.
+Todo PR passa pelo CI. A cada merge na `main`, o [CD](.github/workflows/cd.yml) repete o CI, publica `ghcr.io/lucazdenadai/fiapx-{api,worker,notifier}:sha-<commit>`, sobe a stack no runner com essas imagens e roda o [`scripts/smoke.sh`](scripts/smoke.sh): a coleção do Postman inteira, com o newman e um vídeo gerado pelo ffmpeg. Só com o smoke e o Trivy verdes a tag `main` das imagens avança.
 
 Para uma versão, crie uma tag git num commit que já passou pelo CD: `git tag v1.0.0 && git push origin v1.0.0` repete o smoke e publica `1.0.0`, sem build novo.
 
-O smoke também roda contra a stack local (pede Node e ffmpeg): `scripts/smoke.sh`.
+O smoke também roda contra a stack local (pede Node e ffmpeg): `scripts/smoke.sh`, ou `BASE_URL=http://localhost:<API_PORT> scripts/smoke.sh` com outra porta.
 
 ### Escala
 

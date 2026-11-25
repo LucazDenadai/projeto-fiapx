@@ -1,5 +1,5 @@
 # Stack do FIAP X, com as imagens publicadas no GHCR (ADR-0012). Suba com:
-#   cp .env.example .env && docker compose pull && docker compose up -d
+#   cp .env.example .env && docker compose pull && docker compose up -d --no-build
 # Para gerar as imagens do código, use --build (compose.override.yml).
 #
 # A porta pública da API, o Grafana e o Mailpit (estes só em localhost) saem do

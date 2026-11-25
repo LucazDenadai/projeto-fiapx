@@ -1,5 +1,5 @@
 # CD (ADR-0012): a cada push na main, CI, imagens sha-<commit> no GHCR, deploy
-# efêmero no runner com elas e smoke test. Só então a tag main avança.
+# efêmero no runner com elas, smoke test e Trivy. Só então a tag main avança.
 # Uma tag git vX.Y.Z não gera imagem nova: revalida a sha-<commit> que a main
 # publicou e a promove para X.Y.Z.
 name: CD
@@ -11,11 +11,6 @@ on:
 
 permissions:
   contents: read
-
-# Um deploy por vez, sem cancelar o que já começou.
-concurrency:
-  group: cd-${{ github.ref }}
-  cancel-in-progress: false
 
 env:
   REGISTRO: ghcr.io/lucazdenadai
@@ -43,6 +38,7 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
+      # Sem o cache do CI: o que é publicado só sai deste build.
       - uses: docker/build-push-action@v7
         with:
           context: .
@@ -52,7 +48,34 @@ jobs:
           labels: |
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
             org.opencontainers.image.revision=${{ github.sha }}
-          cache-from: type=gha,scope=${{ matrix.servico }}
+
+  # A imagem publicada é outro build que a do CI: varre de novo, a que vai valer.
+  varrer:
+    name: Trivy na ${{ matrix.servico }} publicada
+    needs: publicar
+    if: >-
+      !cancelled() && (needs.publicar.result == 'success' ||
+      (startsWith(github.ref, 'refs/tags/v') && needs.publicar.result == 'skipped'))
+    runs-on: ubuntu-latest
+    permissions:
+      packages: read
+    strategy:
+      fail-fast: false
+      matrix:
+        servico: [api, worker, notifier]
+    steps:
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: ${{ env.REGISTRO }}/fiapx-${{ matrix.servico }}:sha-${{ github.sha }}
+          severity: CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
+          format: table
 
   implantar:
     name: deploy efêmero e smoke test
@@ -80,6 +103,7 @@ jobs:
         run: |
           sed -e "s/troque-esta-senha/$(openssl rand -hex 16)/" \
               -e "s/^JWT_SECRET=.*/JWT_SECRET=$(openssl rand -hex 32)/" .env.example > .env
+          ! grep -E '^[A-Z_]+=troque' .env
       - name: Baixar as imagens
         run: docker compose pull --quiet
       - name: Subir a stack
@@ -96,19 +120,33 @@ jobs:
 
   promover:
     name: avança a tag da imagem
-    needs: implantar
-    if: ${{ !cancelled() && needs.implantar.result == 'success' }}
+    needs: [implantar, varrer]
+    if: ${{ !cancelled() && needs.implantar.result == 'success' && needs.varrer.result == 'success' }}
     runs-on: ubuntu-latest
     permissions:
+      contents: read
       packages: write
+    concurrency:
+      group: promover-${{ github.ref }}
     steps:
+      - uses: actions/checkout@v7
+      # Execução antiga, atrasada ou refeita, não volta a tag main para trás.
+      - name: Confere se a main ainda está neste commit
+        id: ponta
+        run: |
+          atual=$(git ls-remote origin "$GITHUB_REF" | cut -f1)
+          if [ "$GITHUB_REF" = refs/heads/main ] && [ "$atual" != "$GITHUB_SHA" ]; then
+            echo "::notice::a main já está em $atual; a tag main da imagem não muda"
+            echo "promove=nao" >> "$GITHUB_OUTPUT"
+          fi
       - uses: docker/setup-buildx-action@v4
       - uses: docker/login-action@v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - name: main ou X.Y.Z
+      - name: Promove para main ou X.Y.Z
+        if: steps.ponta.outputs.promove != 'nao'
         run: |
           tag=${GITHUB_REF_NAME#v} # v1.0.0 vira 1.0.0; main continua main
           for servico in api worker notifier; do

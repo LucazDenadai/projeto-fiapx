@@ -23,8 +23,8 @@ RT05 exige CI/CD. A plataforma é Docker Compose num host, e nuvem e Kubernetes 
   2. sobe o `docker-compose.yml` no runner **com as imagens recém-publicadas**;
   3. roda o **smoke test**: cadastro, login, envio de um vídeo curto gerado na hora pelo ffmpeg (`testsrc`, sem binário versionado), espera até `concluido`, download do zip e conferência de que ele tem frames.
 
-  Falha no smoke, o workflow fica vermelho e a tag `main` da imagem não avança.
-- **Tags das imagens:** `sha-<commit>` e `main` a cada merge; `X.Y.Z` a cada tag git `vX.Y.Z`, que promove a imagem `sha-<commit>` já publicada, depois de repetir o smoke test, sem build novo. Sem `latest`. O `docker-compose.yml` usa `image: ghcr.io/…:${TAG:-main}`, então implantar em qualquer máquina com Docker é clonar o repositório, criar o `.env` e rodar `docker compose pull && docker compose up -d`: sem Go e sem build. O clone traz os arquivos que o Compose monta no Prometheus e no Grafana ([ADR-0010](0010-observabilidade-prometheus-grafana.md)). Para desenvolvimento local, um `compose.override.yml` builda as imagens do código.
+  As imagens publicadas passam de novo pelo Trivy. Com falha no smoke ou no Trivy, o workflow fica vermelho e a tag `main` da imagem não avança. Ela também não avança se a `main` já estiver em outro commit: uma execução antiga não a leva para trás.
+- **Tags das imagens:** `sha-<commit>` e `main` a cada merge; `X.Y.Z` a cada tag git `vX.Y.Z`, que promove a imagem `sha-<commit>` já publicada, depois de repetir o smoke test, sem build novo. Sem `latest`. O `docker-compose.yml` usa `image: ghcr.io/…:${TAG:-main}`, então implantar em qualquer máquina com Docker é clonar o repositório, criar o `.env` e rodar `docker compose pull && docker compose up -d --no-build`: sem Go e sem build. O clone traz os arquivos que o Compose monta no Prometheus e no Grafana ([ADR-0010](0010-observabilidade-prometheus-grafana.md)). Para desenvolvimento local, um `compose.override.yml` builda as imagens do código.
 - **Imagens (fecha Q09):** multi-stage, com build estático (`CGO_ENABLED=0`) e usuário não-root.
   - API e Notifier: base **distroless**.
   - Worker: base mínima **com ffmpeg** (o distroless não tem ffmpeg).
@@ -43,8 +43,8 @@ RT05 exige CI/CD. A plataforma é Docker Compose num host, e nuvem e Kubernetes 
 ## Consequências
 
 - O repositório ganha `.github/workflows/` (CI e CD), Dockerfiles por serviço, o `compose.override.yml` e o script do smoke test.
-- O smoke test valida o fluxo inteiro a cada merge, mas deixa o CD mais lento (subir Postgres, RabbitMQ, Redis, Mailpit e os 3 serviços). É aceito, porque roda só no merge, não em todo PR.
-- A estratégia dos testes de integração (testcontainers ou Compose no CI) continua em ticket próprio. O smoke test não a substitui.
+- O smoke test valida o fluxo inteiro a cada merge, mas deixa o CD mais lento (subir Postgres, RabbitMQ, Redis, Mailpit, Prometheus, Grafana e os 3 serviços). É aceito, porque roda só no merge e na tag de versão, não em todo PR.
+- O smoke test não substitui os testes de integração ([ADR-0016](0016-testes-de-integracao-e-migrations.md)).
 - As imagens no GHCR precisam ser públicas, ou o `docker compose pull` fora do runner exige login no GHCR.
 - O Trivy pode quebrar o CI por uma CVE nova na imagem base, sem mudança no código. A correção é atualizar a base.
 - Fecha Q09 (Dockerfile de produção com boas práticas).

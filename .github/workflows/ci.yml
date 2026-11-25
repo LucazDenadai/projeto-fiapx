@@ -8,8 +8,9 @@ on:
 permissions:
   contents: read
 
+# No PR, o push novo cancela o anterior. Na main, cada commit tem o seu CI.
 concurrency:
-  group: ci-${{ github.ref }}
+  group: ci-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
   cancel-in-progress: true
 
 jobs:
@@ -96,7 +97,7 @@ jobs:
           cache-to: type=gha,mode=max,scope=${{ matrix.servico }}
       # Falha só com CRITICAL que já tenha correção (ADR-0012).
       - name: Trivy
-        uses: aquasecurity/trivy-action@v0.36.0
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           image-ref: fiapx-${{ matrix.servico }}:ci
           severity: CRITICAL

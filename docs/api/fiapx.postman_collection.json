@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "FIAP X — processamento de vídeos",
-    "description": "Interface, documentação e smoke test da API (ADR-0013).\n\nRode em ordem: **Cadastro** gera um e-mail novo a cada execução, e **Login** salva o token na variável de coleção `token`, que as rotas de Vídeo mandam como `Authorization: Bearer` sozinhas.\n\nErros vêm como `{\"erro\": \"mensagem pública\"}`.\n\n**Enviar vídeo** usa o `video.mp4` de 5 s versionado ao lado da coleção. **Aguardar conclusão** repete a consulta até o Vídeo ficar `concluido`, e **Baixar zip** confere o Zip de frames: a coleção inteira, em ordem, é o fluxo feliz e o smoke test do CD. No newman, rode de dentro de `docs/api/` ou passe `--working-dir docs/api`.",
+    "description": "Interface, documentação e smoke test da API (ADR-0013).\n\nRode em ordem: **Cadastro** gera um e-mail novo a cada execução, e **Login** salva o token na variável de coleção `token`, que as rotas de Vídeo mandam como `Authorization: Bearer` sozinhas.\n\nErros vêm como `{\"erro\": \"mensagem pública\"}`.\n\n**Enviar vídeo** usa o `video.mp4` de 5 s versionado ao lado da coleção. **Aguardar conclusão** repete a consulta até o Vídeo ficar `concluido`, e **Baixar zip** confere o Zip de frames: a coleção inteira, em ordem, é o fluxo feliz e o smoke test do CD. O `scripts/smoke.sh` roda a coleção no newman com um vídeo gerado na hora pelo ffmpeg; para usar o `video.mp4`, rode o newman com `--working-dir docs/api`.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "auth": {
