@@ -125,8 +125,9 @@ func (e *Extrator) Sondar(ctx context.Context, arquivo string) (Sonda, error) {
 // vazio.
 func (e *Extrator) ExtrairFrames(ctx context.Context, arquivo, dir string) ([]string, error) {
 	// Sem isto o ffmpeg abre uma thread por núcleo do host, ignorando o limite
-	// de CPU do container: com 1 CPU, só gasta memória e tempo. O GOMAXPROCS do
-	// Go segue esse limite.
+	// de CPU do container, e só gasta memória e tempo. O GOMAXPROCS do Go segue
+	// esse limite, com mínimo de 2. O primeiro -threads é do decodificador; o
+	// segundo, depois da entrada, do codificador PNG.
 	threads := strconv.Itoa(runtime.GOMAXPROCS(0))
 	args := append([]string{"-nostdin", "-hide_banner", "-v", "error", "-filter_threads", threads, "-threads", threads}, entradaRestrita...)
 	args = append(args,

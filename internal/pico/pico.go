@@ -13,7 +13,6 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"strconv"
 	"sync"
 	"time"
 )
@@ -129,7 +128,7 @@ func (c cliente) acompanhar(ctx context.Context, aceitos map[string]map[string]b
 		}
 		select {
 		case <-ctx.Done():
-			return ctx.Err()
+			return fmt.Errorf("acompanhar os vídeos: %w", ctx.Err())
 		case <-time.After(intervalo):
 		}
 	}
@@ -144,7 +143,7 @@ type cliente struct {
 func (c cliente) token(ctx context.Context, email string) (string, error) {
 	cred, err := json.Marshal(map[string]string{"email": email, "senha": senha})
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("montar credenciais: %w", err)
 	}
 	entrar := func() (int, string, error) {
 		var corpo struct {
@@ -210,7 +209,7 @@ func (c cliente) enviar(ctx context.Context, token, caminho string) (string, err
 	case status == http.StatusTooManyRequests:
 		return "", errCota
 	case status != http.StatusAccepted:
-		return "", fmt.Errorf("enviar: status %s", strconv.Itoa(status))
+		return "", fmt.Errorf("enviar: status %d", status)
 	}
 	return corpo.ID, nil
 }
