@@ -1,105 +1,136 @@
 # Roteiro do vídeo de entrega (E04)
 
-Até 10 minutos, com documentação, arquitetura e o projeto funcionando ([enunciado](enunciado.md)). O roteiro soma 9min45s. A parte ao vivo foi ensaiada com as imagens publicadas.
+Até 10 minutos, com documentação, arquitetura e o projeto funcionando ([enunciado](enunciado.md)). O roteiro soma 9min30s. Os comandos e os tempos da parte ao vivo foram medidos na stack publicada.
+
+Em cada bloco: **Tela** é o que mostrar ou digitar; **Fala** é um texto de apoio, para dizer com as suas palavras.
 
 ## Antes de gravar
 
-1. No `.env`, só para a gravação: `LIMITE_CADASTRO_IP_MAX=50`. O padrão é 5 cadastros por hora, e o pico usa 4.
-2. Suba a stack do zero. **O `-v` apaga os dados locais.**
+1. Pare a stack que estiver no ar. Nada é apagado:
 
    ```sh
-   docker compose down -v
-   docker compose pull
-   docker compose up -d --no-build --wait
+   docker compose stop
    ```
 
-3. Gere o vídeo corrompido e compile o pico, para não esperar o build na gravação:
+2. No `.env`, só para a gravação:
 
    ```sh
+   COMPOSE_PROJECT_NAME=gravacao   # stack separada, com volumes novos
+   TAG=1.0.1
+   LIMITE_CADASTRO_IP_MAX=50       # o padrão é 5 por hora, e o pico usa 8
+   ```
+
+3. Suba a stack e prepare os arquivos (Git Bash, na raiz do repositório):
+
+   ```sh
+   docker compose pull
+   docker compose up -d --no-build --wait
+   docker pull alpine
    ffmpeg -f lavfi -i testsrc=duration=10:size=640x360:rate=25 -pix_fmt yuv420p bom.mp4
    head -c 20000 bom.mp4 > ruim.mp4
    go build -o pico.exe ./cmd/pico
+   ./pico.exe          # aquece a máquina e enche o dashboard; espere terminar
    ```
 
-4. Rode `./pico.exe` uma vez e espere terminar: aquece a máquina e enche o dashboard.
-5. Deixe abertos:
-   - GitHub: README, `docs/adr/`, `docs/diagramas/`, aba Actions e pacotes;
-   - Postman com a coleção e o ambiente de `docs/api/`;
-   - Grafana em http://localhost:3000, já logado, últimos 15 minutos, atualização de 5 s;
-   - Mailpit em http://localhost:8025;
-   - dois terminais Git Bash na raiz do repositório (os comandos não são do PowerShell).
-6. Feche o `.env` e o gerenciador de senhas: nada com segredo na tela.
+4. Deixe abertos, nesta ordem:
+   - navegador: README, matriz, ADR-0003, `docs/diagramas/`, Actions, pacotes do GHCR;
+   - Grafana (http://localhost:3000), já logado, últimos 5 minutos, atualização de 5 s;
+   - Mailpit (http://localhost:8025);
+   - Postman com a coleção e o ambiente de [`docs/api/`](api/), e o `bom.mp4` escolhido no **Enviar vídeo**;
+   - dois terminais Git Bash na raiz do repositório, com letra grande.
+5. Feche o `.env`: nenhum segredo na tela. Silencie as notificações.
+
+Depois de gravar: `docker compose down -v` (apaga só a stack `gravacao`), desfaça o passo 2 no `.env` e rode `docker compose start`.
 
 ## Roteiro
 
 ### 0:00 — Abertura (30 s)
 
-- Nome, curso e o problema: o protótipo processa dentro da requisição, sem usuário, sem fila e perde o pedido se cair.
-- O que foi entregue: três processos em Go, com RabbitMQ, Postgres, Redis, Prometheus e Grafana, em Docker Compose.
+**Tela:** README no GitHub.
+
+**Fala:** "Sou [nome], [RM], e este é o meu projeto da fase 5. O ponto de partida era um protótipo que recebe um vídeo, extrai os frames e devolve um zip. Ele processa dentro da requisição, não tem usuário e, se cair, perde o pedido. Entreguei três processos em Go, com RabbitMQ, Postgres, Redis e observabilidade, tudo em Docker Compose."
 
 ### 0:30 — Documentação (1min30s)
 
-- README: índice, como rodar, CI/CD.
-- [Matriz de requisitos](matriz-requisitos.md): cada requisito do enunciado, o problema no projeto base e a evidência (seção 7).
-- [ADRs](adr/): 16 decisões com opções rejeitadas e consequências. Abra um, o [ADR-0003](adr/0003-transactional-outbox.md).
-- Script de criação do banco: `migrations/`, aplicado pelo serviço `migrate` (E02).
+**Tela:** índice do README → [matriz](matriz-requisitos.md), seções 1 e 7 → [ADR-0003](adr/0003-transactional-outbox.md), seção "Opções consideradas" → pasta `migrations/`.
 
-### 2:00 — Arquitetura (2 min)
+**Fala:** "O README é o índice de tudo. A matriz pega cada requisito do enunciado, mostra o problema no projeto base e aponta a decisão e a evidência, no fim com a conferência final. As decisões estão em dezesseis ADRs. Este, por exemplo, explica por que usei o Transactional Outbox, o que rejeitei e o que isso custa. O banco é criado por migrations versionadas, que um serviço próprio aplica antes de a API subir."
 
-- [Componentes](diagramas/README.md#componentes): API, Worker e Notifier; só a API tem porta pública de negócio.
-- [Fluxo de um Vídeo](diagramas/README.md#fluxo-de-um-vídeo), com o dedo em três pontos:
-  - o Vídeo e a mensagem são gravados na mesma transação (outbox), então aceito não se perde;
-  - ack só depois do zip pronto, com o Worker idempotente;
-  - DLQ: esgotadas as tentativas, o Vídeo termina em `falhou` e o Usuário recebe e-mail.
-- [Estados](diagramas/README.md#estados-do-vídeo): só andam para a frente.
+### 2:00 — Arquitetura (1min45s)
 
-### 4:00 — Funcionando: fluxo feliz (1min15s)
+**Tela:** [componentes](diagramas/README.md#componentes) → [fluxo de um Vídeo](diagramas/README.md#fluxo-de-um-vídeo) → [estados](diagramas/README.md#estados-do-vídeo).
 
-- `docker compose ps`: tudo healthy, 2 Workers.
-- Postman, em ordem: **Listar vídeos** sem token (`401`), Cadastro, Login (o token é salvo sozinho), Enviar vídeo (`202` na hora), Aguardar conclusão, Baixar zip. Abra o zip e mostre os frames.
+**Fala (componentes):** "A API é a única porta de entrada do usuário. O Worker processa os vídeos e escala com réplicas. O Notifier só avisa quando algo falha. Worker e Notifier não têm porta pública."
 
-### 5:15 — Funcionando: falha e notificação (45 s)
+**Fala (fluxo):** "Três pontos garantem que nenhum pedido se perde. Primeiro: o vídeo e a mensagem são gravados na mesma transação, na outbox; aceito é aceito. Segundo: o Worker só confirma a mensagem com o zip pronto, e pode repetir sem estragar nada. Terceiro: se as tentativas acabam, a mensagem vai para a DLQ, o vídeo termina como falho e o usuário recebe um e-mail."
 
-- No Postman, troque o arquivo do **Enviar vídeo** por `ruim.mp4`: ele tem cabeçalho de vídeo, então é aceito (`202`).
-- **Listar vídeos**: `falhou`, com `video_invalido` e o texto público. Nada da saída do ffmpeg.
-- Mailpit: o e-mail com o nome do arquivo, a data e o motivo.
+**Fala (estados):** "O status só anda para a frente: recebido, processando, e depois concluído ou falhou."
 
-### 6:00 — Funcionando: pico, queda e escala (2 min)
+### 3:45 — Ao vivo: fluxo feliz (1min15s)
 
-- Terminal 1: `./pico.exe` (20 envios em paralelo).
-- Grafana: a fila sobe; 2 Processamentos em andamento.
-- Terminal 2, um Worker morre no meio do Processamento:
+**Tela:**
+- terminal 1: `docker compose ps`
+- Postman: **Listar vídeos** (`401`) → **Cadastro** → **Login** → **Enviar vídeo** → **Listar vídeos** → **Aguardar conclusão** → **Baixar zip**; abra o zip.
 
-  ```sh
-  docker kill -s KILL $(docker compose ps -q worker | head -1)
-  ```
+**Fala:** "A stack inteira está no ar, com as imagens publicadas e dois Workers. Sem token, a API responde 401. Faço o cadastro e o login, e o token fica salvo na coleção. Envio um vídeo: a resposta 202 vem na hora, sem esperar o processamento. Na listagem vejo só os meus vídeos e o status. Concluído, baixo o zip: um frame por segundo."
 
-  O broker reentrega a mensagem dele a outro Worker. O `docker kill` conta como parada manual, então o Compose não o reinicia; o próximo comando o traz de volta.
-- Escale: `docker compose up -d --no-build --scale worker=4`. No Grafana, a fila passa a escoar mais rápido.
-- O pico termina: **20 concluídos, 0 falhos**. Medido: 76,6 s com 2 Workers e 47,8 s com 4, sem queda.
+### 5:00 — Ao vivo: falha e notificação (45 s)
 
-### 8:00 — Funcionando: broker fora do ar (45 s)
+**Tela:** Postman, **Enviar vídeo** com `ruim.mp4` → **Listar vídeos** → Mailpit, abrir o e-mail.
 
-- `docker compose stop rabbitmq`
-- Postman, **Enviar vídeo** com o vídeo bom: continua `202`, e o Vídeo fica em `recebido`. O pedido está na outbox.
-- `docker compose start rabbitmq`
-- **Aguardar conclusão**: `concluido` em cerca de 15 s.
+**Fala:** "Agora um arquivo corrompido. O começo parece um vídeo, então ele é aceito. O Worker descobre o problema, e o vídeo termina em falhou, com um motivo que o usuário entende. A saída do ffmpeg fica só no log. E o e-mail de aviso já chegou."
 
-### 8:45 — Qualidade e CI/CD (45 s)
+### 5:45 — Ao vivo: pico, queda e escala (2min15s)
 
-- GitHub Actions: CI com lint, `go test -race` (Postgres, RabbitMQ e Redis reais), govulncheck e Trivy.
-- CD: publica as imagens, sobe a stack no runner, roda a coleção do Postman e recria o RabbitMQ com um Vídeo na fila. Só então a tag `main` avança.
-- Pacotes no GHCR e a tag de versão.
+**Tela:**
 
-### 9:30 — Fechamento (15 s)
+| Tempo | Onde | O que fazer |
+|---|---|---|
+| 5:45 | terminal 1 | `./pico.exe -n 40` |
+| 5:55 | Grafana | a fila sobe para perto de 36 |
+| 6:10 | terminal 2 | matar um Worker (comando abaixo) e `docker compose ps worker` |
+| 6:30 | terminal 2 | `docker compose up -d --no-build --no-recreate --scale worker=4` |
+| 6:40 | Grafana | a fila escoa |
+| 7:35 | terminal 1 | 40 concluídos, 0 falhos |
 
-- Requisitos obrigatórios atendidos; o link do repositório.
+```sh
+docker run --rm --privileged --pid=host alpine kill -9 $(docker inspect -f '{{.State.Pid}}' $(docker compose ps -q worker | head -1))
+```
+
+Use este comando, e não `docker kill`, que conta como parada manual e não dispara o reinício.
+
+**Fala:** "Simulo um pico: quarenta vídeos de uma vez. Todos são aceitos, e a fila absorve. Agora mato um Worker no meio do processamento, como numa queda de verdade. A mensagem dele volta para a fila, e o container sobe sozinho. Para dar mais vazão, passo de dois para quatro Workers, sem mudar nada no código. No Grafana dá para ver a fila escoando mais rápido. No fim, quarenta concluídos e nenhum perdido, mesmo com a queda."
+
+### 8:00 — Ao vivo: RabbitMQ fora do ar (45 s)
+
+**Tela:** terminal 2 `docker compose stop rabbitmq` → Postman **Enviar vídeo** com `bom.mp4` (`202`) → `docker compose start rabbitmq` → **Aguardar conclusão**.
+
+**Fala:** "E se o próprio broker cair? Paro o RabbitMQ e envio um vídeo: continua aceito, porque o pedido está na outbox, no banco. Religo, o relay publica, e o vídeo conclui."
+
+Leva cerca de 15 s depois do `start`.
+
+### 8:45 — Qualidade e CI/CD (35 s)
+
+**Tela:** Actions, uma execução do CD aberta → pacotes do GHCR.
+
+**Fala:** "Todo PR passa por lint, testes com Postgres, RabbitMQ e Redis reais, e varredura de vulnerabilidades. No merge, o CD publica as imagens, sobe a stack inteira no runner, roda esta mesma coleção do Postman e ainda recria o RabbitMQ com um vídeo na fila. Só então a versão avança."
+
+### 9:20 — Fechamento (10 s)
+
+**Tela:** README.
+
+**Fala:** "Todos os requisitos obrigatórios estão atendidos, e o repositório é público. Obrigado!"
+
+## Se o tempo apertar
+
+Corte nesta ordem: abrir o zip, a seção do RabbitMQ fora do ar, o ADR-0003. Não corte documentação, arquitetura nem o fluxo feliz: o enunciado pede os três.
 
 ## Se algo der errado
 
 | Sintoma | Causa provável | Saída |
 |---|---|---|
 | `429` no cadastro | Limite por IP | `docker compose restart redis` zera os contadores |
-| `429` no envio | Cota de 5 Vídeos em andamento do Usuário | Espere terminar, ou refaça Cadastro e Login |
+| `429` no envio | Cota de 5 Vídeos em andamento | Espere terminar, ou refaça Cadastro e Login |
 | Fila não aparece no Grafana | Coleta a cada 15 s | Espere duas coletas |
 | `401` nas rotas de Vídeo | Token de 1 h expirou | Rode o Login de novo |
+| `kill` ou `$(...)` dá erro | Terminal PowerShell | Use o Git Bash |

@@ -88,7 +88,7 @@ Feita em 2026-11-25, com as imagens `1.0.0` e os testes do repositório. "Ao viv
 | ID | Situação | Evidência |
 |---|---|---|
 | RF01 | Atendido | 2 Workers por padrão. Ao vivo: 20 Vídeos em paralelo, com 2 e depois 4 em Processamento ao mesmo tempo |
-| RF02 | Atendido | Ao vivo: 20 de 20 concluídos com um Worker morto no meio; envio com o RabbitMQ parado dá `202` e conclui quando ele volta. `scripts/recriacao.sh` no CD. `TestRelay_BrokerForaMantemPendenteEPublicaQuandoVolta`, `TestProcessar_QuedaAntesDoCommitDevolveEReentregaRefaz`, `TestWorker_MorrendoEmLoopTerminaFalhou`. A conferência achou e corrigiu a perda da fila na recriação do RabbitMQ ([#51](https://github.com/LucazDenadai/projeto-fiapx/issues/51)) |
+| RF02 | Atendido | Ao vivo: 20 de 20 e 40 de 40 concluídos com um Worker morto no meio (o container volta sozinho); envio com o RabbitMQ parado dá `202` e conclui quando ele volta. `scripts/recriacao.sh` no CD. `TestRelay_BrokerForaMantemPendenteEPublicaQuandoVolta`, `TestProcessar_QuedaAntesDoCommitDevolveEReentregaRefaz`, `TestWorker_MorrendoEmLoopTerminaFalhou`. A conferência achou e corrigiu a perda da fila na recriação do RabbitMQ ([#51](https://github.com/LucazDenadai/projeto-fiapx/issues/51)) |
 | RF03 | Atendido | `TestRotaDeVideo_RecusaTokenAusenteExpiradoOuComOutroAlgoritmo`, `TestCadastro_*`, `TestLogin_*`, `TestLimite_*` |
 | RF04 | Atendido | `TestListagem_*`, `TestConsulta_VideoAlheioDa404IgualAInexistente` |
 | RF05 | Atendido | Ao vivo: Vídeo corrompido vira `video_invalido` e o e-mail chega no Mailpit. `TestNotifier_EmailDeFalhaChegaNoMailpit` |
@@ -96,11 +96,11 @@ Feita em 2026-11-25, com as imagens `1.0.0` e os testes do repositório. "Ao viv
 | RT02 | Atendido | `--scale worker=N`: 20 Vídeos em 76,6 s com 2 Workers e em 47,8 s com 4 |
 | RT03 | Atendido | Repositório público, issues e PRs |
 | RT04 | Atendido | Testes unitários e de integração (testcontainers) com `-race` no CI; newman no CD |
-| RT05 | Atendido | `ci.yml` e `cd.yml`; imagens no GHCR; tag `v1.0.0` publicada como `1.0.0` |
+| RT05 | Atendido | `ci.yml` e `cd.yml`; imagens no GHCR; tags `v1.0.0` e `v1.0.1` publicadas como `1.0.0` e `1.0.1` |
 | E01 | Atendido | 16 ADRs, [diagramas](diagramas/README.md), README, coleção do Postman |
 | E02 | Atendido | `migrations/` e `docker-compose.yml` |
 | E03 | Atendido | https://github.com/LucazDenadai/projeto-fiapx |
-| E04 | **Falta gravar** | [Roteiro](roteiro-video.md) pronto e ensaiado |
+| E04 | **Falta gravar** | [Roteiro](roteiro-video.md) com as falas; comandos e tempos medidos |
 | S01–S05 | Adotados | Seção 3 |
 
 | Achado | Situação | Evidência |
