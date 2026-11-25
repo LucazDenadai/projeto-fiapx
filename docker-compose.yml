@@ -63,6 +63,13 @@ services:
     build:
       context: .
       dockerfile: docker/api.Dockerfile
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: ${API_CPUS:-0.5}
+          memory: ${API_MEMORIA:-256m}
+    memswap_limit: ${API_MEMORIA:-256m}
     ports:
       - "${API_PORT:-8080}:8080"
     environment:
@@ -102,11 +109,22 @@ services:
       redis:
         condition: service_healthy
 
+  # Escala (ADR-0011): 2 réplicas por padrão, um ffmpeg em cada. Para mais,
+  # docker compose up -d --scale worker=N. O Vídeo que estoura a memória derruba
+  # só o ffmpeg ou a réplica dele, que volta; a mensagem é reentregue (ADR-0004).
   worker:
     image: ghcr.io/lucazdenadai/fiapx-worker:${TAG:-main}
     build:
       context: .
       dockerfile: docker/worker.Dockerfile
+    restart: unless-stopped
+    deploy:
+      replicas: ${WORKER_REPLICAS:-2}
+      resources:
+        limits:
+          cpus: ${WORKER_CPUS:-1}
+          memory: ${WORKER_MEMORIA:-1g}
+    memswap_limit: ${WORKER_MEMORIA:-1g}
     environment:
       DATABASE_URL: *postgres-url
       RABBITMQ_URL: *rabbitmq-url
@@ -145,6 +163,13 @@ services:
     build:
       context: .
       dockerfile: docker/notifier.Dockerfile
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: ${NOTIFIER_CPUS:-0.25}
+          memory: ${NOTIFIER_MEMORIA:-128m}
+    memswap_limit: ${NOTIFIER_MEMORIA:-128m}
     environment:
       RABBITMQ_URL: *rabbitmq-url
       # Notificação por e-mail (ADR-0008). No Compose, o Mailpit.
