@@ -1,4 +1,7 @@
-# Stack do FIAP X. Suba com:  cp .env.example .env && docker compose up -d
+# Stack do FIAP X, com as imagens publicadas no GHCR (ADR-0012). Suba com:
+#   cp .env.example .env && docker compose pull && docker compose up -d
+# Para gerar as imagens do código, use --build (compose.override.yml).
+#
 # A porta pública da API, o Grafana e o Mailpit (estes só em localhost) saem do
 # Compose; a porta interna (9090: /metrics, /healthz, /readyz), o Prometheus e
 # as outras dependências ficam na rede interna (ADR-0001, ADR-0010).
@@ -48,9 +51,6 @@ services:
   # Execução única: aplica as migrations antes de API e Worker (ADR-0016).
   migrate:
     image: ghcr.io/lucazdenadai/fiapx-api:${TAG:-main}
-    build:
-      context: .
-      dockerfile: docker/api.Dockerfile
     command: ["migrate"]
     restart: "no"
     environment:
@@ -61,9 +61,6 @@ services:
 
   api:
     image: ghcr.io/lucazdenadai/fiapx-api:${TAG:-main}
-    build:
-      context: .
-      dockerfile: docker/api.Dockerfile
     restart: unless-stopped
     deploy:
       resources:
@@ -115,9 +112,6 @@ services:
   # só o ffmpeg ou a réplica dele, que volta; a mensagem é reentregue (ADR-0004).
   worker:
     image: ghcr.io/lucazdenadai/fiapx-worker:${TAG:-main}
-    build:
-      context: .
-      dockerfile: docker/worker.Dockerfile
     restart: unless-stopped
     deploy:
       replicas: ${WORKER_REPLICAS:-2}
@@ -161,9 +155,6 @@ services:
 
   notifier:
     image: ghcr.io/lucazdenadai/fiapx-notifier:${TAG:-main}
-    build:
-      context: .
-      dockerfile: docker/notifier.Dockerfile
     restart: unless-stopped
     deploy:
       resources:

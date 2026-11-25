@@ -1,0 +1,21 @@
+# Desenvolvimento local (ADR-0012): o docker compose soma este arquivo ao
+# docker-compose.yml e, com --build, gera as imagens do código. Para usar só as
+# publicadas no GHCR: docker compose pull && docker compose up -d
+services:
+  migrate:
+    build: &api
+      context: .
+      dockerfile: docker/api.Dockerfile
+
+  api:
+    build: *api
+
+  worker:
+    build:
+      context: .
+      dockerfile: docker/worker.Dockerfile
+
+  notifier:
+    build:
+      context: .
+      dockerfile: docker/notifier.Dockerfile

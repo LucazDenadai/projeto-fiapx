@@ -2,23 +2,34 @@
 
 Hackathon POSTECH SOAT (Fase 5). Envie um vídeo, o sistema extrai os frames e devolve um `.zip` para download.
 
-> Status: cadastro, login, envio, Processamento, download do Zip de frames, retry com DLQ, e-mail de Falha definitiva, retenção, escala e observabilidade prontos. Faltam o CD e os diagramas ([issues abertas](https://github.com/LucazDenadai/projeto-fiapx/issues)).
+> Status: cadastro, login, envio, Processamento, download do Zip de frames, retry com DLQ, e-mail de Falha definitiva, retenção, escala, observabilidade e CD prontos. Faltam os diagramas ([issues abertas](https://github.com/LucazDenadai/projeto-fiapx/issues)).
 
 ## Como rodar
 
-Requisitos: Docker Desktop (Compose v2) e, para os testes e o pico, Go e ffmpeg no PATH.
+Com as imagens publicadas no GHCR, basta o Docker (Compose v2) e o clone do repositório:
 
 ```sh
-cp .env.example .env          # troque as senhas e o JWT_SECRET
-docker compose up -d --build  # migrate roda antes de API e Worker
-docker compose ps             # api, worker e notifier ficam healthy
+cp .env.example .env    # troque as senhas e o JWT_SECRET
+docker compose pull
+docker compose up -d    # migrate roda antes de API e Worker
+docker compose ps       # api, worker e notifier ficam healthy
 ```
+
+`TAG` no `.env` escolhe a versão: `main` (padrão), `sha-<commit>` ou `X.Y.Z`. Para rodar o código local, troque os dois comandos do meio por `docker compose up -d --build`: o [`compose.override.yml`](compose.override.yml) gera as imagens. Os testes e o pico pedem também Go e ffmpeg no PATH.
 
 A API publica a porta `API_PORT` (padrão 8080). O Grafana (3000) e o Mailpit (8025) só atendem em localhost. A porta interna `9090` de cada processo (`/metrics`, `/healthz`, `/readyz`) e o Prometheus ficam na rede do Compose.
 
 Para usar a API, importe no Postman a coleção e o ambiente de [`docs/api/`](docs/api/) e rode as requisições em ordem: o **Login** salva o token, que vai sozinho nas rotas de Vídeo. O **Enviar vídeo** usa `docs/api/video.mp4`, um vídeo de 5 s versionado no repositório. O **Aguardar conclusão** repete a consulta até o Vídeo ficar `concluido`, e o **Baixar zip** traz o Zip de frames; no Postman, rode a coleção pelo Collection Runner. Quando um Vídeo falha, o Notifier manda o e-mail de aviso; no Compose ele chega no Mailpit, em http://localhost:8025.
 
 Testes: `go test -race ./...` sobe Postgres, RabbitMQ e Redis descartáveis com testcontainers (Docker precisa estar rodando); `go test -short ./...` pula a integração. O CI fica em [`.github/workflows/ci.yml`](.github/workflows/ci.yml).
+
+### CI/CD
+
+Todo PR passa pelo CI. A cada merge na `main`, o [CD](.github/workflows/cd.yml) repete o CI, publica `ghcr.io/lucazdenadai/fiapx-{api,worker,notifier}:sha-<commit>`, sobe a stack no runner com essas imagens e roda o [`scripts/smoke.sh`](scripts/smoke.sh): a coleção do Postman inteira, com o newman e um vídeo gerado pelo ffmpeg. Só com o smoke verde a tag `main` das imagens avança.
+
+Para uma versão, crie uma tag git num commit que já passou pelo CD: `git tag v1.0.0 && git push origin v1.0.0` repete o smoke e publica `1.0.0`, sem build novo.
+
+O smoke também roda contra a stack local (pede Node e ffmpeg): `scripts/smoke.sh`.
 
 ### Escala
 

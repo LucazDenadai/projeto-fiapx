@@ -24,12 +24,12 @@ RT05 exige CI/CD. A plataforma é Docker Compose num host, e nuvem e Kubernetes 
   3. roda o **smoke test**: cadastro, login, envio de um vídeo curto gerado na hora pelo ffmpeg (`testsrc`, sem binário versionado), espera até `concluido`, download do zip e conferência de que ele tem frames.
 
   Falha no smoke, o workflow fica vermelho e a tag `main` da imagem não avança.
-- **Tags das imagens:** `sha-<commit>` e `main` a cada merge; `X.Y.Z` a cada tag git `vX.Y.Z`. Sem `latest`. O `docker-compose.yml` usa `image: ghcr.io/…:${TAG:-main}`, então implantar em qualquer máquina é `docker compose pull && docker compose up -d`. Para desenvolvimento local, um `compose.override.yml` builda as imagens do código.
+- **Tags das imagens:** `sha-<commit>` e `main` a cada merge; `X.Y.Z` a cada tag git `vX.Y.Z`, que promove a imagem `sha-<commit>` já publicada, depois de repetir o smoke test, sem build novo. Sem `latest`. O `docker-compose.yml` usa `image: ghcr.io/…:${TAG:-main}`, então implantar em qualquer máquina com Docker é clonar o repositório, criar o `.env` e rodar `docker compose pull && docker compose up -d`: sem Go e sem build. O clone traz os arquivos que o Compose monta no Prometheus e no Grafana ([ADR-0010](0010-observabilidade-prometheus-grafana.md)). Para desenvolvimento local, um `compose.override.yml` builda as imagens do código.
 - **Imagens (fecha Q09):** multi-stage, com build estático (`CGO_ENABLED=0`) e usuário não-root.
   - API e Notifier: base **distroless**.
   - Worker: base mínima **com ffmpeg** (o distroless não tem ffmpeg).
   - Sem `go run`, sem toolchain e sem `COPY . .` na imagem final.
-- **Proteção da `main`:** a partir do primeiro código de aplicação, mudança de código entra por PR com o CI como check obrigatório. Docs e ADRs podem ir direto para a `main`.
+- **Proteção da `main`:** a partir do primeiro código de aplicação, mudança de código entra por PR com o CI como check obrigatório. Docs e ADRs podem ir direto para a `main`. O GitHub não separa a proteção por pasta: a regra vale para tudo, e o administrador a pula só para docs.
 
 ## Opções consideradas
 

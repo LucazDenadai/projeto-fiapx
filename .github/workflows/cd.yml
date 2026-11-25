@@ -1,0 +1,117 @@
+# CD (ADR-0012): a cada push na main, CI, imagens sha-<commit> no GHCR, deploy
+# efêmero no runner com elas e smoke test. Só então a tag main avança.
+# Uma tag git vX.Y.Z não gera imagem nova: revalida a sha-<commit> que a main
+# publicou e a promove para X.Y.Z.
+name: CD
+
+on:
+  push:
+    branches: [main]
+    tags: ["v[0-9]+.[0-9]+.[0-9]+"]
+
+permissions:
+  contents: read
+
+# Um deploy por vez, sem cancelar o que já começou.
+concurrency:
+  group: cd-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  REGISTRO: ghcr.io/lucazdenadai
+
+jobs:
+  ci:
+    if: github.ref == 'refs/heads/main'
+    uses: ./.github/workflows/ci.yml
+
+  publicar:
+    name: publica ${{ matrix.servico }}
+    needs: ci
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      matrix:
+        servico: [api, worker, notifier]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: docker/setup-buildx-action@v4
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: docker/${{ matrix.servico }}.Dockerfile
+          push: true
+          tags: ${{ env.REGISTRO }}/fiapx-${{ matrix.servico }}:sha-${{ github.sha }}
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+          cache-from: type=gha,scope=${{ matrix.servico }}
+
+  implantar:
+    name: deploy efêmero e smoke test
+    needs: publicar
+    # Na tag git, ci e publicar são pulados de propósito; falha neles, não.
+    if: >-
+      !cancelled() && (needs.publicar.result == 'success' ||
+      (startsWith(github.ref, 'refs/tags/v') && needs.publicar.result == 'skipped'))
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
+    env:
+      TAG: sha-${{ github.sha }}
+      # Sem o compose.override.yml: só as imagens publicadas, nenhum build.
+      COMPOSE_FILE: docker-compose.yml
+    steps:
+      - uses: actions/checkout@v7
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: .env descartável
+        run: |
+          sed -e "s/troque-esta-senha/$(openssl rand -hex 16)/" \
+              -e "s/^JWT_SECRET=.*/JWT_SECRET=$(openssl rand -hex 32)/" .env.example > .env
+      - name: Baixar as imagens
+        run: docker compose pull --quiet
+      - name: Subir a stack
+        run: docker compose up -d --wait --wait-timeout 180
+      - name: Instalar ffmpeg
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg
+      - name: Smoke test
+        run: scripts/smoke.sh
+      - name: Estado e logs da stack
+        if: failure()
+        run: |
+          docker compose ps -a
+          docker compose logs --no-color --tail=200
+
+  promover:
+    name: avança a tag da imagem
+    needs: implantar
+    if: ${{ !cancelled() && needs.implantar.result == 'success' }}
+    runs-on: ubuntu-latest
+    permissions:
+      packages: write
+    steps:
+      - uses: docker/setup-buildx-action@v4
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: main ou X.Y.Z
+        run: |
+          tag=${GITHUB_REF_NAME#v} # v1.0.0 vira 1.0.0; main continua main
+          for servico in api worker notifier; do
+            imagem=$REGISTRO/fiapx-$servico
+            docker buildx imagetools create --tag "$imagem:$tag" "$imagem:sha-$GITHUB_SHA"
+          done

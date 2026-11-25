@@ -33,5 +33,5 @@ O [ADR-0001](0001-api-worker-notifier.md) separou API, Worker e Notifier. Faltam
 - Gravar o Vídeo (Postgres) e publicar em `processamento` (RabbitMQ) são escritas em sistemas diferentes: A3 precisa fechar essa janela.
 - O Worker tem de ser idempotente e o ack é o último passo do Processamento.
 - `prefetch` por Worker é o controle de concorrência local; `--scale worker=N` é o horizontal (A9).
-- RabbitMQ entra no Compose com o plugin de management (profundidade de fila visível no vídeo de entrega, E04) e é fonte de métricas para A8.
+- RabbitMQ é fonte de métricas para A8, pelo plugin de Prometheus: a profundidade das filas aparece no Grafana ([ADR-0010](0010-observabilidade-prometheus-grafana.md)), inclusive no vídeo de entrega (E04). O plugin de management fica fora.
 - Cliente Go: `github.com/rabbitmq/amqp091-go` (cliente oficial).
