@@ -85,7 +85,20 @@ func Novo(cfg Config) (http.Handler, error) {
 	protegidas := servico.Exigir(rotasVideo)
 	mux.Handle(prefixoVideos, protegidas)
 	mux.Handle(prefixoVideos+"/", protegidas)
-	return a.metricas.medir(mux, rotasVideo), nil
+	return cabecalhosDeSeguranca(a.metricas.medir(mux, rotasVideo)), nil
+}
+
+// cabecalhosDeSeguranca vale para toda resposta, inclusive erros (OWASP REST
+// Security Cheat Sheet). JSON não fica em cache, porque o login devolve o
+// token; o download troca o Cache-Control pela política dele.
+func cabecalhosDeSeguranca(proximo http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		h := w.Header()
+		h.Set("X-Content-Type-Options", "nosniff")
+		h.Set("Cross-Origin-Resource-Policy", "same-origin")
+		h.Set("Cache-Control", "no-store")
+		proximo.ServeHTTP(w, r)
+	})
 }
 
 type aplicacao struct {

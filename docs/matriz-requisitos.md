@@ -114,3 +114,5 @@ Feita em 2026-11-25, com as imagens `1.0.0` e os testes do repositório. "Ao viv
 | Q08 | Resolvido | `TestNovoLogger_CadaLinhaEhJSONComOServico`; `correlation_id` em todo o fluxo |
 | Q09 | Resolvido | `docker/*.Dockerfile`: multi-stage, não-root, distroless (Worker em base mínima com ffmpeg) |
 | Q10 | Resolvido | `TestPortaInterna_*`, `TestProcessar_DesligamentoDevolveSemFalhar`, configuração por `.env` |
+
+Segurança em detalhe (OWASP API Top 10, varredura com o OWASP ZAP e limitações conhecidas): [seguranca.md](seguranca.md).

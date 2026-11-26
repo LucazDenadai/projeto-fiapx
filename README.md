@@ -55,6 +55,7 @@ Os logs são JSON no stdout: `docker compose logs api worker notifier | grep <co
 |---|---|
 | [Enunciado](docs/enunciado.md) ([PDF](docs/enunciado.pdf)) | Requisitos oficiais do hackathon |
 | [Matriz de requisitos](docs/matriz-requisitos.md) | Requisito × problema do projeto base × decisão, com a conferência final |
+| [Segurança](docs/seguranca.md) | OWASP API Top 10, varredura com o OWASP ZAP e limitações conhecidas (sem TLS no Compose local) |
 | [Roteiro do vídeo](docs/roteiro-video.md) | Vídeo de entrega (E04): preparação, passos e tempos |
 
 ### Arquitetura (ADRs)

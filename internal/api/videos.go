@@ -305,7 +305,6 @@ func (a *aplicacao) baixar(w http.ResponseWriter, r *http.Request) {
 	// aspas, ponto e vírgula e acentos não quebram nem injetam o header.
 	h.Set("Content-Disposition", mime.FormatMediaType("attachment", map[string]string{"filename": zip.Nome}))
 	h.Set("Cache-Control", "private, no-cache")
-	h.Set("X-Content-Type-Options", "nosniff")
 	http.ServeContent(w, r, zip.Nome, info.ModTime(), zip.Arquivo)
 }
 
